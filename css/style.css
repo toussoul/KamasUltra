@@ -269,3 +269,13 @@
   .at-cost small { display: block; font-size: 11px; color: var(--muted); }
   .at-tot { display: flex; justify-content: space-between; padding: 10px 4px 0; font-weight: 600; flex-wrap: wrap; gap: 6px; }
   .btn-s.alt:hover { background: #3a3a3a; }
+
+/* ---------- Stockage (serveur local ou navigateur seul) ---------- */
+.si-disque, .si-navigateur { display: none; }
+[data-stockage="disque"] .si-disque, [data-stockage="navigateur"] .si-navigateur { display: block; }
+.stk-err { color: var(--bad); }
+.stk-disque { color: var(--good); }
+.stk-alerte {
+  position: sticky; top: 0; z-index: 50; margin: 0 0 12px; padding: 10px 14px;
+  border-radius: 10px; background: #4a2626; color: #ffd9d9; font-size: 14px;
+}

@@ -1539,7 +1539,10 @@ function bkImport(file) {
       return;
     }
     setMsg(bkEl.msg, 'Sauvegarde restaurée, rechargement…', 'ok');
-    setTimeout(function () { window.location.reload(); }, 400);
+    // Avec le serveur local, on attend que le fichier sur le disque soit à jour avant de recharger
+    var recharger = function () { window.location.reload(); };
+    var fin = window.kuStockage ? window.kuStockage.flush() : Promise.resolve();
+    fin.then(function () { setTimeout(recharger, 400); }, recharger);
   };
   reader.readAsText(file);
 }

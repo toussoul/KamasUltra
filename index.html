@@ -42,6 +42,7 @@
 </header>
 
 <main>
+  <div id="stkAlerte" class="stk-alerte" hidden role="alert">⚠️ Enregistrement sur le disque impossible : serveur.py est-il toujours lancé ? Tes modifications restent dans le navigateur en attendant.</div>
 
   <section id="dashboard" class="active">
     <h2>Dashboard 🚀</h2>
@@ -449,19 +450,33 @@
     <h2>Sauvegarde 💾</h2>
 
     <div class="iv-sec">
-      <div class="section-title">À quoi ça sert ?</div>
-      <p class="expl">
-        Ce site n'a pas de compte ni de serveur : tout ce que tu enregistres (tes calculs, tes objets en vente,
-        tes ventes) est gardé <b>dans ton navigateur, sur cet appareil uniquement</b>.
-      </p>
-      <p class="expl">
-        Si tu vides les données de ton navigateur, si tu changes de téléphone ou d'ordinateur, ou si tu utilises
-        un autre navigateur, tout ce que tu as enregistré <b>n'apparaît plus</b>.
-      </p>
-      <p class="expl" style="margin-bottom:0">
-        La sauvegarde met toutes tes données dans <b>un petit fichier</b> que tu télécharges et gardes de côté.
-        Tu peux ensuite les récupérer quand tu veux, ici ou sur un autre appareil.
-      </p>
+      <div class="section-title">Où sont tes données ?</div>
+      <div class="bk-sum" id="stkEtat"></div>
+      <div class="si-disque">
+        <p class="expl">
+          KamasUltra tourne sur ton ordinateur : tout ce que tu enregistres (tes calculs, tes objets en vente,
+          tes ventes) est écrit dans le fichier <b>donnees/kamasultra.json</b>, à côté du site. Vider le navigateur
+          ne l'efface pas.
+        </p>
+        <p class="expl" style="margin-bottom:0">
+          Une copie par jour est gardée dans <b>donnees/historique/</b> (les 30 derniers jours). La sauvegarde
+          ci-dessous reste utile pour emporter tes données ailleurs.
+        </p>
+      </div>
+      <div class="si-navigateur">
+        <p class="expl">
+          Tout ce que tu enregistres (tes calculs, tes objets en vente, tes ventes) est gardé
+          <b>dans ton navigateur, sur cet appareil uniquement</b>.
+        </p>
+        <p class="expl">
+          Si tu vides les données de ton navigateur, si tu changes de téléphone ou d'ordinateur, ou si tu utilises
+          un autre navigateur, tout ce que tu as enregistré <b>n'apparaît plus</b>.
+        </p>
+        <p class="expl" style="margin-bottom:0">
+          La sauvegarde met toutes tes données dans <b>un petit fichier</b> que tu télécharges et gardes de côté.
+          Tu peux ensuite les récupérer quand tu veux, ici ou sur un autre appareil.
+        </p>
+      </div>
     </div>
 
     <div class="iv-sec">
@@ -493,6 +508,6 @@
 
 </main>
 
-<script src="js/app.js"></script>
+<script src="js/stockage.js"></script>
 </body>
 </html>
