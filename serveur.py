@@ -25,6 +25,7 @@ RACINE = os.path.dirname(os.path.abspath(__file__))
 DOSSIER = os.path.join(RACINE, "donnees")
 FICHIER = os.path.join(DOSSIER, "kamasultra.json")
 HISTORIQUE = os.path.join(DOSSIER, "historique")
+DOSSIER_PRIX = os.path.join(DOSSIER, "Price")
 GARDER_JOURS = 30
 TAILLE_MAX = 20 * 1024 * 1024  # 20 Mo, très au-delà d'un usage normal
 PREFIXE = "ku_"
@@ -39,6 +40,70 @@ def lire():
             return json.load(f)
     except FileNotFoundError:
         return None
+
+
+_cache_prix = {"cle": None, "valeur": None}
+
+
+def _documents(chemin):
+    """Un fichier peut contenir un seul JSON ou une suite de lignes JSON."""
+    with open(chemin, encoding="utf-8") as f:
+        texte = f.read()
+    try:
+        yield json.loads(texte)
+        return
+    except ValueError:
+        pass
+    for ligne in texte.splitlines():
+        ligne = ligne.strip()
+        if ligne:
+            try:
+                yield json.loads(ligne)
+            except ValueError:
+                continue
+
+
+def lire_prix():
+    """Fusionne les fichiers de donnees/Price/ : le prix le plus récent par objet.
+
+    Formats acceptés : {"server": {...}, "prices": [...]}, une liste de prix,
+    ou une suite de ces objets ligne par ligne. Chaque prix doit avoir
+    itemId et price ; observedAt (ou lastChangedAt) sert à garder le plus récent.
+    """
+    if not os.path.isdir(DOSSIER_PRIX):
+        return {"fichiers": [], "serveurs": [], "prix": {}}
+    noms = sorted(n for n in os.listdir(DOSSIER_PRIX) if n.lower().endswith(".json"))
+    cle = tuple((n, os.path.getmtime(os.path.join(DOSSIER_PRIX, n))) for n in noms)
+    if _cache_prix["cle"] == cle:
+        return _cache_prix["valeur"]
+    prix, serveurs, fichiers = {}, set(), []
+    for nom, mtime in cle:
+        n = 0
+        try:
+            docs = list(_documents(os.path.join(DOSSIER_PRIX, nom)))
+        except OSError:
+            continue
+        for doc in docs:
+            liste = doc.get("prices") if isinstance(doc, dict) else doc
+            if isinstance(doc, dict) and isinstance(doc.get("server"), dict) and doc["server"].get("name"):
+                serveurs.add(str(doc["server"]["name"]))
+            if not isinstance(liste, list):
+                continue
+            for e in liste:
+                if not isinstance(e, dict):
+                    continue
+                ident, valeur = e.get("itemId"), e.get("price")
+                if not isinstance(ident, int) or isinstance(valeur, bool) or not isinstance(valeur, (int, float)) or valeur <= 0:
+                    continue
+                date = str(e.get("observedAt") or e.get("lastChangedAt") or "")
+                ancien = prix.get(ident)
+                if ancien is None or date > ancien[1]:
+                    prix[ident] = [valeur, date, str(e.get("quality") or ""), str(e.get("freshness") or "")]
+                n += 1
+        fichiers.append({"nom": nom, "date": datetime.datetime.fromtimestamp(mtime).astimezone().isoformat(timespec="seconds"), "prix": n})
+    valeur = {"fichiers": fichiers, "serveurs": sorted(serveurs), "prix": prix}
+    _cache_prix.update(cle=cle, valeur=valeur)
+    return valeur
 
 
 def archiver_du_jour():
@@ -136,6 +201,11 @@ class Gestionnaire(SimpleHTTPRequestHandler):
             if contenu is None:
                 return self.repondre_json(HTTPStatus.OK, {"app": "KamasUltra", "absent": True})
             return self.repondre_json(HTTPStatus.OK, contenu)
+        if c == "/api/prix":
+            try:
+                return self.repondre_json(HTTPStatus.OK, lire_prix())
+            except OSError as e:
+                return self.repondre_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"erreur": str(e)})
         if any(c == p or c.startswith(p + "/") for p in CHEMINS_INTERDITS):
             return self.send_error(HTTPStatus.NOT_FOUND)
         return super().do_GET()

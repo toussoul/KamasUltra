@@ -259,14 +259,17 @@
   <section id="ressources">
     <h2>Prix des ressources 💰</h2>
     <p class="opt" style="margin-top:0">Les ressources nécessaires aux objets de ton Atelier, stock déduit. Les prix saisis ici
-      remplacent ceux des recettes dans l'Atelier ; un prix en gris vient de la recette.</p>
+      remplacent ceux des recettes dans l'Atelier. Un prix en gris vient du fichier de prix ou de la recette :
+      entre ton prix et celui du fichier, le plus récent est utilisé.</p>
+    <p class="opt" id="rsFichier"></p>
     <div class="result" id="rsSum">
       <div class="card"><div class="k">Coût total à acheter</div><div class="v" id="rsTotal">–</div></div>
       <div class="card"><div class="k">Prix manquants</div><div class="v" id="rsMissing">–</div></div>
     </div>
     <div class="iv-sec" style="margin-top:14px">
       <div id="rsList"></div>
-      <div class="actions"><button class="btn-s alt" id="rsGoAtelier">🛠️ Retour à l'Atelier</button></div>
+      <div class="actions"><button class="btn-s alt" id="rsGoAtelier">🛠️ Retour à l'Atelier</button>
+        <button class="btn-s alt" id="rsReload">🔄 Relire le fichier de prix</button></div>
     </div>
   </section>
 

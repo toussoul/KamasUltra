@@ -17,6 +17,13 @@ Les données sont écrites dans `donnees/kamasultra.json`, avec une copie par jo
 `donnees/historique/` (30 jours). Ce dossier n'est pas versionné par git.
 Au premier lancement, ce que le navigateur contenait déjà est recopié sur le disque.
 
+### Fichier de prix
+
+Les fichiers `.json` déposés dans `donnees/Price/` sont lus par la page Prix des ressources
+(bouton « Relire le fichier de prix » après une mise à jour). Format attendu : des objets
+`{"server": {...}, "prices": [{"itemId", "price", "observedAt", ...}]}`, un par ligne ou en un bloc.
+Pour chaque ressource, entre ton prix saisi et celui du fichier, le plus récent est utilisé.
+
 Sans serveur (fichier `index.html` ouvert directement, ou GitHub Pages), le site
 fonctionne comme avant : les données ne restent que dans le navigateur.
 

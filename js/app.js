@@ -477,7 +477,7 @@ function ivApply(d) {
   ivEl.name.value = d.name || '';
   ivEl.prix.value = fmtField(d.prix);
   iv.rows = (d.rows && d.rows.length) ? d.rows.map(function (r) {
-    return { name: r.name || '', qty: r.qty, price: r.price, icon: r.icon };
+    return { name: r.name || '', qty: r.qty, price: r.price, icon: r.icon, id: r.id };
   }) : blankRows(8);
   ivEl.avant.value = fmtField(d.avant);
   ivEl.apres.value = fmtField(d.apres);
@@ -551,12 +551,12 @@ function ivImportId(id) {
     })
     .then(function (res) {
       // Prix repris de la page Prix des ressources (seulement à l'import : un craft enregistré garde les siens)
-      var prix = rsPrices(), repris = 0;
-      iv.rows = res.rec.ingredientIds.map(function (_, k) {
-        var info = res.infos[k + 1], p = prix[atKey(info.name)];
-        var price = p && p.price > 0 ? String(p.price) : '';
+      var repris = 0;
+      iv.rows = res.rec.ingredientIds.map(function (rid, k) {
+        var info = res.infos[k + 1], p = rsInfo(info.name, rid, 0);
+        var price = p.price > 0 ? String(p.price) : '';
         if (price) repris++;
-        return { name: info.name, icon: info.icon, qty: res.rec.quantities ? res.rec.quantities[k] : '', price: price };
+        return { name: info.name, icon: info.icon, id: rid, qty: res.rec.quantities ? res.rec.quantities[k] : '', price: price };
       });
       var head = res.infos[0];
       if (head.name.indexOf('Ressource n°') !== 0) ivEl.name.value = head.name; // sinon on garde la saisie
@@ -567,8 +567,8 @@ function ivImportId(id) {
       ivCompute();
       var n = iv.rows.length;
       setMsg(ivEl.msg, 'Recette importée (' + n + ' ressource' + (n > 1 ? 's' : '') + '). ' +
-        (repris === n ? 'Tous les prix viennent de la page Prix des ressources : vérifie-les.'
-          : repris ? repris + ' prix repris de la page Prix des ressources, il te reste à saisir les autres.'
+        (repris === n ? 'Tous les prix ont été repris (tes prix saisis ou le fichier de prix) : vérifie-les.'
+          : repris ? repris + ' prix repris (tes prix saisis ou le fichier de prix), il te reste à saisir les autres.'
           : 'Il te reste à saisir les prix.'), 'ok');
     })
     .catch(function (err) {
@@ -1327,17 +1327,18 @@ function atTotals() {
       var name = String(r.name || '').trim(), q = nv(r.qty);
       if (!name || q <= 0) return;
       var k = atKey(name);
-      if (!map[k]) { map[k] = { key: k, name: name, icon: r.icon || null, qty: 0, price: 0 }; order.push(k); }
+      if (!map[k]) { map[k] = { key: k, name: name, icon: r.icon || null, id: null, qty: 0, price: 0 }; order.push(k); }
       map[k].qty += q * n;
+      if (!map[k].id && r.id) map[k].id = r.id;
       if (!map[k].icon && r.icon) map[k].icon = r.icon;
       if (nv(r.price) > 0) map[k].rprice = nv(r.price);
     });
   });
-  var prix = rsPrices();
   return order.map(function (k) {
-    var t = map[k], p = prix[k];
+    var t = map[k];
     t.rprice = t.rprice || 0;
-    t.price = p && p.price > 0 ? p.price : t.rprice;
+    t.info = rsInfo(t.name, t.id, t.rprice);
+    t.price = t.info.price;
     return t;
   });
 }
@@ -1353,7 +1354,7 @@ function atRender() {
   atEl.items.innerHTML = items.map(function (it) {
     var rows = (it.rows || []).filter(function (r) { return r && r.name && nv(r.qty) > 0; }).length;
     var unit = 0;
-    (it.rows || []).forEach(function (r) { unit += nv(r.qty) * rsPriceOf(r.name, r.price); });
+    (it.rows || []).forEach(function (r) { unit += nv(r.qty) * rsInfo(r.name, r.id, nv(r.price)).price; });
     var n = atQty(it.qty);
     return '<div class="at-item" data-id="' + esc(it.id) + '">' + imgTag(it.icon, '') +
       '<div class="at-name">' + esc(it.name || 'Sans nom') + '<small>' + rows + ' ressource' + (rows > 1 ? 's' : '') + '</small></div>' +
@@ -1436,7 +1437,7 @@ document.getElementById('atCopy').addEventListener('click', function () {
 document.getElementById('ivAtAdd').addEventListener('click', function () {
   var snap = ivSnapshot();
   var rows = snap.rows.filter(function (r) { return r && String(r.name || '').trim() && nv(r.qty) > 0; })
-    .map(function (r) { return { name: String(r.name).trim(), icon: r.icon || null, qty: nv(r.qty), price: r.price }; });
+    .map(function (r) { return { name: String(r.name).trim(), icon: r.icon || null, qty: nv(r.qty), price: r.price, id: r.id || null }; });
   var name = snap.name.trim();
   if (!name || !rows.length) { setMsg(ivEl.saveMsg, 'Choisis un item avec sa recette (nom + ressources) avant de l\'ajouter à l\'Atelier.', 'err'); return; }
   var n = atQty(document.getElementById('ivAtQty').value);
@@ -1450,31 +1451,59 @@ document.getElementById('ivAtAdd').addEventListener('click', function () {
 });
 
 // ---------- Prix des ressources (pour les crafts de l'Atelier) ----------
-// Un prix unitaire par ressource, avec sa date : il remplace celui des recettes dans l'Atelier
+// Trois sources par ressource : prix saisi ici, fichier de prix (donnees/Price/, via le serveur
+// local), prix tapé dans la recette. Entre le prix saisi et celui du fichier, le plus récent gagne.
 function rsPrices() {
   try { var d = JSON.parse(localStorage.getItem('ku_prix') || '{}'); return d && typeof d === 'object' && !Array.isArray(d) ? d : {}; } catch (e) { return {}; }
 }
 function rsStore(d) { try { localStorage.setItem('ku_prix', JSON.stringify(d)); } catch (e) {} }
-function rsPriceOf(name, fallback) {
-  var p = rsPrices()[atKey(name || '')];
-  return p && p.price > 0 ? p.price : nv(fallback);
+// Identifiants DofusDB retrouvés à partir des noms (objets ajoutés à l'Atelier avant cette version)
+function rsIds() {
+  try { var d = JSON.parse(localStorage.getItem('ku_ids') || '{}'); return d && typeof d === 'object' && !Array.isArray(d) ? d : {}; } catch (e) { return {}; }
 }
+var rsFile = { prix: {}, fichiers: [], serveurs: [], etat: 'absent' };
+
+function rsInfo(name, id, rprice) {
+  var m = rsPrices()[atKey(name || '')];
+  if (!(m && m.price > 0)) m = null;
+  var fid = +id || +rsIds()[atKey(name || '')] || 0;
+  var f = fid ? rsFile.prix[fid] : null;
+  var fAt = f ? (Date.parse(f[1]) || 0) : -1;
+  if (m && (+m.at || 0) >= fAt) return { price: m.price, src: 'saisi', at: +m.at || 0 };
+  if (f) return { price: f[0], src: 'fichier', at: fAt, q: f[2], fr: f[3], older: m };
+  if (rprice > 0) return { price: rprice, src: 'recette' };
+  return { price: 0, src: '' };
+}
+var RS_FRESH = { recent: 'récent', aging: 'à vérifier', stale: 'ancien' };
+function rsSource(i) {
+  if (i.src === 'saisi') return 'prix saisi le ' + dateFr(i.at);
+  if (i.src === 'fichier') {
+    var tags = [RS_FRESH[i.fr], i.q === 'imported_unverified' ? 'non vérifié' : ''].filter(Boolean);
+    return 'prix du fichier' + (i.at > 0 ? ', ' + dateFr(i.at) : '') + (tags.length ? ' (' + tags.join(', ') + ')' : '') +
+      (i.older ? ' · ton prix du ' + dateFr(i.older.at) + ' est plus ancien' : '');
+  }
+  return i.src === 'recette' ? 'prix de la recette' : '';
+}
+
 var rsEl = {
   list: document.getElementById('rsList'), sum: document.getElementById('rsSum'),
-  total: document.getElementById('rsTotal'), missing: document.getElementById('rsMissing')
+  total: document.getElementById('rsTotal'), missing: document.getElementById('rsMissing'),
+  file: document.getElementById('rsFichier'), reload: document.getElementById('rsReload')
 };
 function rsNeed(t, stock) { return Math.max(0, t.qty - Math.max(0, nv(stock[t.key]))); }
-function rsRowSub(t, need, have, p) {
-  return 'Besoin : ' + fmtInt(t.qty) + (have > 0 ? ' · stock : ' + fmtInt(have) + ' · reste ' + fmtInt(need) : '') +
-    (p && p.price > 0 && p.at ? ' · prix du ' + dateFr(p.at) : (t.rprice > 0 ? ' · prix de la recette' : ''));
+function rsRowSub(t, need, have) {
+  var src = rsSource(t.info);
+  return 'Besoin : ' + fmtInt(t.qty) + (have > 0 ? ' · stock : ' + fmtInt(have) + ' · reste ' + fmtInt(need) : '') + (src ? ' · ' + src : '');
 }
 // Totaux seuls : appelé à chaque frappe, sans reconstruire la liste (le curseur reste en place)
 function rsTotals() {
-  var stock = atStock(), tot = atTotals(), prix = rsPrices(), sum = 0, missing = 0;
+  var stock = atStock(), tot = atTotals(), sum = 0, missing = 0;
   tot.forEach(function (t) {
     var need = rsNeed(t, stock);
     var sub = rsEl.list.querySelector('[data-rs-sub="' + CSS.escape(t.key) + '"]');
-    if (sub) sub.textContent = rsRowSub(t, need, Math.max(0, nv(stock[t.key])), prix[t.key]);
+    if (sub) sub.textContent = rsRowSub(t, need, Math.max(0, nv(stock[t.key])));
+    var inp = rsEl.list.querySelector('[data-rs="' + CSS.escape(t.key) + '"]');
+    if (inp) inp.placeholder = t.info.src !== 'saisi' && t.price > 0 ? fmtField(t.price) : 'Prix';
     if (need > 0 && !(t.price > 0)) missing++;
     sum += t.price * need;
     var cell = rsEl.list.querySelector('[data-rs-tot="' + CSS.escape(t.key) + '"]');
@@ -1484,7 +1513,19 @@ function rsTotals() {
   rsEl.missing.textContent = fmtInt(missing);
   rsEl.missing.className = 'v ' + (missing ? 'neg' : 'pos');
 }
+function rsFileRender() {
+  var n = Object.keys(rsFile.prix).length;
+  rsEl.reload.style.display = rsFile.etat === 'absent' ? 'none' : '';
+  rsEl.file.textContent = rsFile.etat === 'absent'
+    ? 'Fichier de prix : disponible seulement avec le serveur local (serveur.py), dans donnees/Price/.'
+    : rsFile.etat === 'chargement' ? 'Fichier de prix : chargement…'
+    : rsFile.etat === 'erreur' ? 'Fichier de prix : lecture impossible.'
+    : !rsFile.fichiers.length ? 'Fichier de prix : aucun fichier .json dans donnees/Price/.'
+    : 'Fichier de prix' + (rsFile.serveurs.length ? ' (' + rsFile.serveurs.join(', ') + ')' : '') + ' : ' + fmtInt(n) +
+      ' objets (' + rsFile.fichiers.map(function (f) { return f.nom + ' du ' + dateFr(f.date); }).join(', ') + ')';
+}
 function rsRender() {
+  rsFileRender();
   var tot = atTotals(), stock = atStock(), prix = rsPrices();
   rsEl.sum.style.display = tot.length ? '' : 'none';
   if (!tot.length) {
@@ -1492,16 +1533,56 @@ function rsRender() {
     return;
   }
   rsEl.list.innerHTML = tot.map(function (t) {
-    var need = rsNeed(t, stock), p = prix[t.key];
+    var need = rsNeed(t, stock), m = t.info.src === 'saisi' ? prix[t.key] : null;
     return '<div class="at-row rs-row' + (need === 0 ? ' done' : '') + '">' + imgTag(t.icon, '') +
       '<div class="at-name">' + esc(t.name) + '<small data-rs-sub="' + esc(t.key) + '"></small></div>' +
       '<div class="input-wrap rs-in"><input type="text" data-num inputmode="decimal" data-rs="' + esc(t.key) + '" data-name="' + esc(t.name) + '"' +
-      ' aria-label="Prix unitaire de ' + esc(t.name) + '" placeholder="' + (t.rprice > 0 ? esc(fmtField(t.rprice)) : 'Prix') + '"' +
-      ' value="' + (p && p.price > 0 ? esc(fmtField(p.price)) : '') + '"><span class="unit">K</span></div>' +
+      ' aria-label="Prix unitaire de ' + esc(t.name) + '" placeholder="Prix"' +
+      ' value="' + (m ? esc(fmtField(m.price)) : '') + '"><span class="unit">K</span></div>' +
       '<div class="at-q rs-tot" data-rs-tot="' + esc(t.key) + '"></div></div>';
   }).join('');
   rsTotals();
+  rsResolveIds();
 }
+
+// Retrouve l'identifiant des ressources qui n'en ont pas, par leur nom exact (50 par requête)
+var rsTried = {};
+function rsResolveIds() {
+  if (!Object.keys(rsFile.prix).length) return;
+  var ids = rsIds();
+  var todo = atTotals().filter(function (t) { return !t.id && !ids[t.key] && !rsTried[t.key]; }).slice(0, 50);
+  if (!todo.length) return;
+  todo.forEach(function (t) { rsTried[t.key] = 1; });
+  var url = API + '/items?lang=fr&$limit=50&$select[]=id&$select[]=name' +
+    todo.map(function (t) { return '&name.fr[$in][]=' + encodeURIComponent(t.name); }).join('');
+  getJson(url).then(function (r) {
+    var d = rsIds(), found = 0;
+    (r && r.data || []).forEach(function (o) {
+      var k = atKey(nameOf(o));
+      if (o.id && todo.some(function (t) { return t.key === k; }) && !d[k]) { d[k] = o.id; found++; }
+    });
+    if (found) {
+      try { localStorage.setItem('ku_ids', JSON.stringify(d)); } catch (e) {}
+      refreshViews();
+    }
+  }).catch(function () { todo.forEach(function (t) { delete rsTried[t.key]; }); });
+}
+
+function rsLoadFile() {
+  if (!(window.kuStockage && window.kuStockage.mode() === 'disque')) { rsFile.etat = 'absent'; rsFileRender(); return; }
+  rsFile.etat = 'chargement'; rsFileRender();
+  fetch('api/prix', { cache: 'no-store' }).then(function (r) {
+    if (!r.ok) throw new Error('erreur ' + r.status);
+    return r.json();
+  }).then(function (j) {
+    rsFile.prix = j && j.prix && typeof j.prix === 'object' ? j.prix : {};
+    rsFile.fichiers = Array.isArray(j.fichiers) ? j.fichiers : [];
+    rsFile.serveurs = Array.isArray(j.serveurs) ? j.serveurs : [];
+    rsFile.etat = 'ok';
+    refreshViews();
+  }).catch(function () { rsFile.etat = 'erreur'; rsFileRender(); });
+}
+
 rsEl.list.addEventListener('input', function (e) {
   var t = e.target;
   if (!t.dataset || !t.dataset.rs) return;
@@ -1511,10 +1592,11 @@ rsEl.list.addEventListener('input', function (e) {
   rsStore(d);
   rsTotals();
 });
-// En quittant le champ : met à jour la date affichée et les coûts de l'Atelier
+// En quittant le champ : met à jour les coûts de l'Atelier
 rsEl.list.addEventListener('change', function (e) {
   if (e.target.dataset && e.target.dataset.rs) { atRender(); dashRender(); }
 });
+rsEl.reload.addEventListener('click', rsLoadFile);
 document.getElementById('rsGoAtelier').addEventListener('click', function () { showTab('atelier'); window.scrollTo(0, 0); });
 document.getElementById('atGoPrix').addEventListener('click', function () { showTab('ressources'); window.scrollTo(0, 0); });
 
@@ -1675,3 +1757,4 @@ document.querySelectorAll('[data-num]').forEach(function (i) { i.value = fmtFiel
 kuReady = true;
 refreshViews();
 almLoad(false);
+rsLoadFile();
