@@ -107,14 +107,17 @@ function compute() {
   var netPA = pa * (1 - TAX) - coutPA;
   var netRA = ra * (1 - TAX) - coutRA;
 
-  var best = netPA >= netRA ? { n: 'PA', v: netPA } : { n: 'RA', v: netRA };
+  // Comparaison à quantité égale : 1 rune RA demande autant de matière que 3 runes PA.
+  // Comparer 1 PA à 1 RA désignait la RA dès que son bénéfice dépassait celui d'une seule PA.
+  var lotPA = 3 * netPA;
+  var best = lotPA >= netRA ? { n: 'PA', v: lotPA } : { n: 'RA', v: netRA };
   el.winner.textContent = best.n;
   el.net.textContent = fmt(best.v);
   el.net.className = 'v ' + (best.v >= 0 ? 'pos' : 'neg');
 
   el.detail.innerHTML =
-    row('PA', coutPA, pa * (1 - TAX), netPA) +
-    row('RA', coutRA, ra * (1 - TAX), netRA);
+    row('3 × PA', 3 * coutPA, 3 * pa * (1 - TAX), lotPA) +
+    row('1 × RA', coutRA, ra * (1 - TAX), netRA);
 
   try {
     localStorage.setItem('ku_runes', JSON.stringify({
@@ -245,8 +248,8 @@ function computeMontures() {
   var html = '';
   for (var gen = 2; gen <= 10; gen++) {
     // Prix de vente minimal pour ne pas perdre d'argent après la taxe de 2 %,
-    // arrondi à la centaine inférieure (comme dans l'app Glide).
-    var seuil = Math.floor((prix * gen) / (1 - TAX) / 100) * 100;
+    // arrondi à la centaine supérieure : arrondir en dessous donnait un seuil légèrement à perte.
+    var seuil = Math.ceil((prix * gen) / (1 - TAX) / 100) * 100;
     html += '<div class="card"><div class="k">Gen ' + gen + '</div><div class="v">' +
       fmtInt(seuil) + '</div></div>';
   }
@@ -458,10 +461,6 @@ function ivCalc() {
 
 function ivCompute() {
   var c = ivCalc();
-  c.subs.forEach(function (s, i) {
-    var cell = document.getElementById('ivSub' + i);
-    if (cell) cell.textContent = s ? fmtInt(s) : '–';
-  });
   ivEl.net.textContent = c.cout > 0 ? fmtInt(c.cout - c.gain) + ' K' : '–';
   ivEl.net.className = 'v';
   ivEl.seuil.textContent = c.seuil === null ? '–' : fmtInt(c.seuil) + ' K';
@@ -599,7 +598,10 @@ ivEl.save.addEventListener('click', function () {
     if (n > 1) msg += ' La quantité n\'est utilisée que pour un nouvel objet : clique sur « Vider le formulaire » pour en créer d\'autres.';
   } else {
     // nouveaux objets : un exemplaire indépendant par unité craftée
+    // Identifiants consécutifs : on part après le plus grand existant, sinon deux
+    // enregistrements rapprochés de plusieurs exemplaires produisent des doublons.
     var base = Date.now();
+    a.forEach(function (it) { if (+it.id >= base) base = +it.id + 1; });
     for (var k = n - 1; k >= 0; k--) {
       var copy = JSON.parse(JSON.stringify(entry));
       copy.id = base + k; copy.inv = true;
@@ -835,9 +837,15 @@ function entryCost(e) {
   return nv(it.prix) * (1 - TAX) - (+it.net || 0); // anciens crafts : coût déduit du bénéfice enregistré
 }
 function entryFees(e) { return +e.it.fees || 0; }
+// La taxe de 2 % est payée une fois, sur le prix de la mise en vente ; une actualisation
+// ne coûte que ses frais de 1 %. Le prix d'origine est figé à la première actualisation.
+function entryTaxBase(e) {
+  var lp = e.it.listPrice;
+  return lp != null && isFinite(lp) ? +lp : entryPrice(e);
+}
 function entryNet(e, price) {
   var p = price == null ? entryPrice(e) : price;
-  return p * (1 - TAX) - entryCost(e) - entryFees(e);
+  return p - TAX * entryTaxBase(e) - entryCost(e) - entryFees(e);
 }
 function isSold(e) { return !!e.it.soldAt; }
 function isInv(e) { return !!e.it.inv && !e.it.soldAt; }
@@ -845,7 +853,7 @@ function isListed(e) { return !e.it.soldAt && !e.it.inv; }
 
 // Quand on ré-enregistre depuis un calculateur, on garde l'historique de l'HDV
 function keepHdv(entry, old) {
-  ['fees', 'updates', 'soldAt', 'soldPrice', 'soldNet', 'inv'].forEach(function (k) {
+  ['fees', 'updates', 'listPrice', 'soldAt', 'soldPrice', 'soldNet', 'inv'].forEach(function (k) {
     if (old[k] != null) entry[k] = old[k];
   });
   if (old.date) entry.date = old.date;
@@ -875,7 +883,8 @@ function hdvItemHtml(e) {
   var it = e.it, price = entryPrice(e), cost = entryCost(e), fees = entryFees(e), net = entryNet(e);
   var n = +it.updates || 0;
   // Prix à partir duquel une actualisation (frais de 1 % inclus) laisse encore un bénéfice
-  var minPrice = Math.ceil(Math.max(cost + fees, 0) / (1 - TAX - FEE));
+  // (taxe déjà payée sur le prix de mise en vente, frais de 1 % sur le nouveau prix)
+  var minPrice = Math.ceil(Math.max(cost + fees + TAX * entryTaxBase(e), 0) / (1 - FEE));
   return '<div class="hdv-item" data-k="' + e.kind + '" data-id="' + it.id + '">' +
     '<div class="hdv-top"><div class="n">' + imgTag(it.icon, 'si') + '<span>' + esc(it.name) + '</span></div>' +
     '<div class="hdv-net ' + (net >= 0 ? 'pos' : 'neg') + '">' + fmtInt(net) + ' K</div></div>' +
@@ -954,7 +963,9 @@ function hdvUpdate(box) {
   if (!e || !(p > 0) || p === entryPrice(e)) return;
   var net = entryNet(e, p) - p * FEE;
   if (net < 0 && !window.confirm('À ce prix, l\'actualisation te fait perdre de l\'argent (bénéfice : ' + fmtInt(net) + ' K). Actualiser quand même ?')) return;
+  var before = entryPrice(e);
   updateEntry(kind, id, function (it) {
+    if (it.listPrice == null) it.listPrice = before;
     it.price = p;
     it.fees = (+it.fees || 0) + p * FEE;
     it.updates = (+it.updates || 0) + 1;
@@ -982,7 +993,7 @@ function hdvClick(e) {
     });
     refreshViews();
   } else if (act === 'list') {
-    updateEntry(kind, id, function (it) { delete it.inv; it.date = new Date().toISOString(); });
+    updateEntry(kind, id, function (it) { delete it.inv; delete it.listPrice; it.date = new Date().toISOString(); });
     refreshViews();
     setMsg(document.getElementById('invMsg'), '« ' + entry.it.name + ' » est maintenant dans l\'onglet Hôtel de vente.', 'ok');
   } else if (act === 'unsold') {
