@@ -24,6 +24,12 @@ Les fichiers `.json` déposés dans `donnees/Price/` sont lus par la page Prix d
 `{"server": {...}, "prices": [{"itemId", "price", "observedAt", ...}]}`, un par ligne ou en un bloc.
 Pour chaque ressource, entre ton prix saisi et celui du fichier, le plus récent est utilisé.
 
+Un prix modifié dans la page Prix des ressources met aussi à jour le fichier : l'entrée de
+l'objet reçoit le nouveau prix et la date du jour (`observedAt`, `lastConfirmedAt`, et
+`lastChangedAt` si le prix change), `revision` + 1 et `freshness: "recent"`. Un objet absent
+est ajouté avec `quality: "manual"`. Le reste du fichier est réécrit à l'identique, et une
+copie est gardée dans `donnees/historique/` avant la première modification du jour.
+
 Sans serveur (fichier `index.html` ouvert directement, ou GitHub Pages), le site
 fonctionne comme avant : les données ne restent que dans le navigateur.
 

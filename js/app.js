@@ -1537,6 +1537,7 @@ function rsRender() {
     return '<div class="at-row rs-row' + (need === 0 ? ' done' : '') + '">' + imgTag(t.icon, '') +
       '<div class="at-name">' + esc(t.name) + '<small data-rs-sub="' + esc(t.key) + '"></small></div>' +
       '<div class="input-wrap rs-in"><input type="text" data-num inputmode="decimal" data-rs="' + esc(t.key) + '" data-name="' + esc(t.name) + '"' +
+      ' data-id="' + esc(rsIdOf(t) || '') + '"' +
       ' aria-label="Prix unitaire de ' + esc(t.name) + '" placeholder="Prix"' +
       ' value="' + (m ? esc(fmtField(m.price)) : '') + '"><span class="unit">K</span></div>' +
       '<div class="at-q rs-tot" data-rs-tot="' + esc(t.key) + '"></div></div>';
@@ -1545,10 +1546,11 @@ function rsRender() {
   rsResolveIds();
 }
 
+function rsIdOf(t) { return +t.id || +rsIds()[t.key] || 0; }
 // Retrouve l'identifiant des ressources qui n'en ont pas, par leur nom exact (50 par requête)
 var rsTried = {};
 function rsResolveIds() {
-  if (!Object.keys(rsFile.prix).length) return;
+  if (!(window.kuStockage && window.kuStockage.mode() === 'disque')) return; // utile seulement avec les fichiers de prix
   var ids = rsIds();
   var todo = atTotals().filter(function (t) { return !t.id && !ids[t.key] && !rsTried[t.key]; }).slice(0, 50);
   if (!todo.length) return;
@@ -1587,15 +1589,53 @@ rsEl.list.addEventListener('input', function (e) {
   var t = e.target;
   if (!t.dataset || !t.dataset.rs) return;
   var d = rsPrices(), v = nv(t.value);
-  if (v > 0) d[t.dataset.rs] = { name: t.dataset.name, price: v, at: Date.now() };
+  if (v > 0) d[t.dataset.rs] = { name: t.dataset.name, price: v, at: Date.now(), id: +t.dataset.id || null };
   else delete d[t.dataset.rs];
   rsStore(d);
   rsTotals();
+  if (v > 0) rsPushLater(t.dataset.rs);
 });
-// En quittant le champ : met à jour les coûts de l'Atelier
+// En quittant le champ : envoi immédiat au fichier de prix, puis coûts de l'Atelier
 rsEl.list.addEventListener('change', function (e) {
-  if (e.target.dataset && e.target.dataset.rs) { atRender(); dashRender(); }
+  if (e.target.dataset && e.target.dataset.rs) { rsPush(e.target.dataset.rs); atRender(); dashRender(); }
 });
+
+// ----- Prix modifiés → fichier de prix (donnees/Price/, via le serveur local) -----
+var rsTimers = {}, rsSent = {};
+function rsMsg(text, cls) { setMsg(document.getElementById('rsMsg'), text, cls); }
+function rsPushLater(key) {
+  clearTimeout(rsTimers[key]);
+  rsTimers[key] = setTimeout(function () { rsPush(key); }, 1000);
+}
+function rsPush(key) {
+  clearTimeout(rsTimers[key]); delete rsTimers[key];
+  if (!(window.kuStockage && window.kuStockage.mode() === 'disque')) return;
+  var e = rsPrices()[key];
+  if (!e || !(e.price > 0)) return;
+  var sig = e.price + '@' + e.at;
+  if (rsSent[key] === sig) return; // déjà envoyé
+  var name = e.name || key;
+  var id = +e.id || +rsIds()[key] || 0;
+  if (!id) { rsMsg(name + ' : objet inconnu de DofusDB, prix gardé sur le site seulement.', 'err'); return; }
+  rsSent[key] = sig;
+  fetch('api/prix', {
+    method: 'PUT', cache: 'no-store',
+    headers: { 'Content-Type': 'application/json', 'X-KamasUltra': '1' },
+    body: JSON.stringify({ itemId: id, price: e.price, at: e.at })
+  }).then(function (r) {
+    return r.json().catch(function () { return {}; }).then(function (j) {
+      if (!r.ok) throw new Error(j && j.erreur ? j.erreur : 'erreur ' + r.status);
+      return j;
+    });
+  }).then(function (j) {
+    var old = rsFile.prix[id];
+    rsFile.prix[id] = [e.price, j.date, old ? old[2] : 'manual', 'recent'];
+    rsMsg(name + ' : ' + fmtInt(e.price) + ' K ' + (j.ajoute ? 'ajouté à ' : 'enregistré dans ') + (j.fichiers || []).join(', ') + '.', 'ok');
+  }).catch(function (err) {
+    delete rsSent[key];
+    rsMsg(name + ' : fichier de prix non mis à jour (' + err.message + ').', 'err');
+  });
+}
 rsEl.reload.addEventListener('click', rsLoadFile);
 document.getElementById('rsGoAtelier').addEventListener('click', function () { showTab('atelier'); window.scrollTo(0, 0); });
 document.getElementById('atGoPrix').addEventListener('click', function () { showTab('ressources'); window.scrollTo(0, 0); });

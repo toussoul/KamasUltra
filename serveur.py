@@ -106,18 +106,132 @@ def lire_prix():
     return valeur
 
 
-def archiver_du_jour():
-    """Copie le fichier actuel dans l'historique, une fois par jour."""
-    if not os.path.exists(FICHIER):
+def archiver_du_jour(chemin=FICHIER, prefixe="kamasultra"):
+    """Copie le fichier dans l'historique, une fois par jour (les GARDER_JOURS derniers)."""
+    if not os.path.exists(chemin):
         return
     os.makedirs(HISTORIQUE, exist_ok=True)
     jour = datetime.date.today().isoformat()
-    cible = os.path.join(HISTORIQUE, "kamasultra-%s.json" % jour)
+    cible = os.path.join(HISTORIQUE, "%s-%s.json" % (prefixe, jour))
     if not os.path.exists(cible):
-        shutil.copy2(FICHIER, cible)
-    copies = sorted(n for n in os.listdir(HISTORIQUE) if n.startswith("kamasultra-"))
+        shutil.copy2(chemin, cible)
+    copies = sorted(n for n in os.listdir(HISTORIQUE) if n.startswith(prefixe + "-") and n[len(prefixe) + 1:][:4].isdigit())
     for ancienne in copies[:-GARDER_JOURS]:
         os.remove(os.path.join(HISTORIQUE, ancienne))
+
+
+def _ecrire_atomique(chemin, texte):
+    tmp = chemin + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="") as f:
+        f.write(texte)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, chemin)
+
+
+def _iso(ms):
+    return datetime.datetime.fromtimestamp(ms / 1000, datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _compact(doc):
+    # Même écriture que les fichiers de prix d'origine : compacte, sans espaces
+    return json.dumps(doc, separators=(",", ":"), ensure_ascii=False)
+
+
+def maj_prix(ident, valeur, quand_ms):
+    """Met à jour le prix d'un objet dans les fichiers de donnees/Price/.
+
+    Chaque entrée de cet objet reçoit le nouveau prix et la date (observedAt,
+    lastConfirmedAt, lastChangedAt), revision + 1 et freshness « recent ». Si
+    l'objet n'est dans aucun fichier, il est ajouté au fichier modifié le plus
+    récemment. Le reste du fichier est réécrit à l'identique. Une copie de chaque
+    fichier est gardée dans l'historique avant sa première modification du jour.
+    """
+    if not os.path.isdir(DOSSIER_PRIX):
+        raise LookupError("dossier donnees/Price/ absent")
+    noms = sorted(n for n in os.listdir(DOSSIER_PRIX) if n.lower().endswith(".json"))
+    if not noms:
+        raise LookupError("aucun fichier .json dans donnees/Price/")
+    date = _iso(quand_ms)
+
+    def maj(e):
+        if e.get("price") != valeur:
+            e["lastChangedAt"] = date
+            if isinstance(e.get("revision"), int):
+                e["revision"] += 1
+        e["price"] = valeur
+        e["observedAt"] = date
+        e["lastConfirmedAt"] = date
+        e["freshness"] = "recent"
+        if e.get("quality") in (None, "", "unknown"):
+            e["quality"] = "manual"
+
+    def charger(nom):
+        chemin = os.path.join(DOSSIER_PRIX, nom)
+        with open(chemin, encoding="utf-8", newline="") as f:
+            texte = f.read()
+        try:
+            return chemin, "bloc", [texte], [json.loads(texte)]
+        except ValueError:
+            pass
+        parties = texte.split("\n")
+        docs = []
+        for p in parties:
+            try:
+                docs.append(json.loads(p) if p.strip() else None)
+            except ValueError:
+                docs.append(None)
+        return chemin, "lignes", parties, docs
+
+    def listes(doc):
+        if isinstance(doc, dict) and isinstance(doc.get("prices"), list):
+            return doc["prices"]
+        return doc if isinstance(doc, list) else None
+
+    def enregistrer(chemin, mode, parties, docs, modifies):
+        if mode == "bloc":
+            texte = _compact(docs[0])
+        else:
+            for i in modifies:
+                parties[i] = _compact(docs[i])
+            texte = "\n".join(parties)
+        archiver_du_jour(chemin, "prix-" + os.path.splitext(os.path.basename(chemin))[0])
+        _ecrire_atomique(chemin, texte)
+
+    modifies_fichiers = []
+    for nom in noms:
+        chemin, mode, parties, docs = charger(nom)
+        modifies = set()
+        for i, doc in enumerate(docs):
+            for e in listes(doc) or []:
+                if isinstance(e, dict) and e.get("itemId") == ident:
+                    maj(e)
+                    modifies.add(i)
+        if modifies:
+            enregistrer(chemin, mode, parties, docs, modifies)
+            modifies_fichiers.append(nom)
+
+    ajoute = False
+    if not modifies_fichiers:
+        nom = max(noms, key=lambda n: os.path.getmtime(os.path.join(DOSSIER_PRIX, n)))
+        chemin, mode, parties, docs = charger(nom)
+        cible = next((i for i in range(len(docs) - 1, -1, -1) if listes(docs[i]) is not None), None)
+        if cible is None:
+            raise LookupError("format de %s non reconnu" % nom)
+        doc = docs[cible]
+        serveur = doc.get("server") if isinstance(doc, dict) and isinstance(doc.get("server"), dict) else {}
+        entree = {"itemId": ident}
+        if serveur.get("id"):
+            entree["serverId"] = serveur["id"]
+        entree.update({"price": valeur, "revision": 1, "quality": "manual", "freshness": "recent",
+                       "reference": "unit_observed", "observedAt": date, "lastConfirmedAt": date, "lastChangedAt": date})
+        listes(doc).append(entree)
+        enregistrer(chemin, mode, parties, docs, {cible})
+        modifies_fichiers.append(nom)
+        ajoute = True
+
+    _cache_prix["cle"] = None  # relu au prochain appel
+    return {"ok": True, "fichiers": modifies_fichiers, "ajoute": ajoute, "date": date}
 
 
 def ecrire(donnees):
@@ -216,7 +330,7 @@ class Gestionnaire(SimpleHTTPRequestHandler):
         return super().do_HEAD()
 
     def do_PUT(self):
-        if not self.hote_local() or self.chemin() != "/api/donnees":
+        if not self.hote_local() or self.chemin() not in ("/api/donnees", "/api/prix"):
             return self.send_error(HTTPStatus.FORBIDDEN)
         # En-tête propre au site : une page d'un autre site ne peut pas l'envoyer
         # sans autorisation CORS, que ce serveur ne donne jamais.
@@ -229,8 +343,14 @@ class Gestionnaire(SimpleHTTPRequestHandler):
         if taille <= 0 or taille > TAILLE_MAX:
             return self.repondre_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"erreur": "taille invalide"})
         try:
-            donnees = valider(json.loads(self.rfile.read(taille).decode("utf-8")))
+            corps = json.loads(self.rfile.read(taille).decode("utf-8"))
         except (ValueError, UnicodeDecodeError) as e:
+            return self.repondre_json(HTTPStatus.BAD_REQUEST, {"erreur": str(e)})
+        if self.chemin() == "/api/prix":
+            return self.put_prix(corps)
+        try:
+            donnees = valider(corps)
+        except ValueError as e:
             return self.repondre_json(HTTPStatus.BAD_REQUEST, {"erreur": str(e)})
         try:
             with verrou:
@@ -238,6 +358,26 @@ class Gestionnaire(SimpleHTTPRequestHandler):
         except OSError as e:
             return self.repondre_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"erreur": "écriture impossible : %s" % e})
         return self.repondre_json(HTTPStatus.OK, {"ok": True})
+
+    def put_prix(self, corps):
+        """{"itemId": 15271, "price": 58000, "at": 1794514035708} : met à jour les fichiers de prix."""
+        c = corps if isinstance(corps, dict) else {}
+        ident, valeur, quand = c.get("itemId"), c.get("price"), c.get("at")
+        if (not isinstance(ident, int) or isinstance(ident, bool) or ident <= 0
+                or isinstance(valeur, bool) or not isinstance(valeur, (int, float)) or not 0 < valeur < 1e13):
+            return self.repondre_json(HTTPStatus.BAD_REQUEST, {"erreur": "itemId et price attendus"})
+        if isinstance(valeur, float) and valeur.is_integer():
+            valeur = int(valeur)
+        maintenant = datetime.datetime.now().timestamp() * 1000
+        if isinstance(quand, bool) or not isinstance(quand, (int, float)) or abs(quand - maintenant) > 86400000:
+            quand = maintenant  # date du client absente ou incohérente : date du serveur
+        try:
+            with verrou:
+                return self.repondre_json(HTTPStatus.OK, maj_prix(ident, valeur, quand))
+        except LookupError as e:
+            return self.repondre_json(HTTPStatus.NOT_FOUND, {"erreur": str(e)})
+        except OSError as e:
+            return self.repondre_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"erreur": "écriture impossible : %s" % e})
 
     def do_POST(self):
         return self.send_error(HTTPStatus.METHOD_NOT_ALLOWED)
