@@ -141,10 +141,24 @@ def _ms(date_iso):
         return 0
 
 
-def a_verifier(jours=2.0):
-    """Ressources du craft en cours (Investissements → Craft) dont le prix est inconnu
-    ou plus vieux que `jours`. Même règle que le site : entre le prix saisi et celui
-    des fichiers de prix, le plus récent compte.
+SOURCES = ("craft", "atelier")
+SOURCES_PAR_DEFAUT = ("atelier",)
+
+
+def _nombre(v):
+    try:
+        x = float(str(v if v is not None else "0").replace(" ", "").replace("\u202f", "").replace("\u00a0", "").replace(",", "."))
+    except ValueError:
+        return 0
+    return x if x > 0 else 0
+
+
+def a_verifier(jours=2.0, sources=SOURCES_PAR_DEFAUT):
+    """Ressources dont le prix est inconnu ou plus vieux que `jours`, prises dans :
+    - « craft » : la recette ouverte dans Investissements → Craft ;
+    - « atelier » : les objets de l'Atelier (quantité × nombre d'objets à fabriquer).
+    Même règle que le site : entre le prix saisi et celui des fichiers de prix, le plus
+    récent compte. Ordre : le craft d'abord, puis inconnus, puis du plus ancien au plus récent.
     """
     contenu = lire() or {}
     data = contenu.get("data") if isinstance(contenu, dict) else {}
@@ -157,21 +171,50 @@ def a_verifier(jours=2.0):
             return defaut
         return v if isinstance(v, type(defaut)) else defaut
 
-    brouillon, saisis, ids = charger("ku_iv_draft", {}), charger("ku_prix", {}), charger("ku_ids", {})
+    brouillon, atelier = charger("ku_iv_draft", {}), charger("ku_atelier", [])
+    saisis, ids = charger("ku_prix", {}), charger("ku_ids", {})
     fichier = lire_prix()["prix"]
     maintenant = datetime.datetime.now().timestamp() * 1000
     limite = maintenant - jours * 86400000
-    vus, a_faire, a_jour = set(), [], []
-    for r in brouillon.get("rows") or []:
+
+    # Ressources réunies par nom (sans casse), avec leur origine et la quantité totale
+    ressources, ordre = {}, []
+
+    def ajouter(r, origine, objet, fois=1):
         if not isinstance(r, dict):
-            continue
+            return
         nom = str(r.get("name") or "").strip()
-        if not nom or _cle(nom) in vus:
-            continue
-        vus.add(_cle(nom))
-        ident = r.get("id") if isinstance(r.get("id"), int) else ids.get(_cle(nom))
+        if not nom:
+            return
+        k = _cle(nom)
+        if k not in ressources:
+            ressources[k] = {"nom": nom, "id": None, "quantite": 0, "origines": [], "objets": []}
+            ordre.append(k)
+        e = ressources[k]
+        if not e["id"] and isinstance(r.get("id"), int) and r["id"] > 0:
+            e["id"] = r["id"]
+        e["quantite"] += _nombre(r.get("qty")) * fois
+        if origine not in e["origines"]:
+            e["origines"].append(origine)
+        if objet and objet not in e["objets"]:
+            e["objets"].append(objet)
+
+    if "craft" in sources:
+        for r in brouillon.get("rows") or []:
+            ajouter(r, "craft", str(brouillon.get("name") or "").strip())
+    if "atelier" in sources:
+        for it in atelier:
+            if isinstance(it, dict):
+                fois = max(1, int(_nombre(it.get("qty")) or 1))
+                for r in it.get("rows") or []:
+                    ajouter(r, "atelier", str(it.get("name") or "").strip(), fois)
+
+    a_faire, a_jour = [], []
+    for k in ordre:
+        e = ressources[k]
+        ident = e["id"] or ids.get(k)
         ident = ident if isinstance(ident, int) and ident > 0 else None
-        m = saisis.get(_cle(nom))
+        m = saisis.get(k)
         m = m if isinstance(m, dict) and isinstance(m.get("price"), (int, float)) and m["price"] > 0 else None
         f = fichier.get(ident) if ident else None
         m_at = float(m.get("at") or 0) if m else -1
@@ -182,24 +225,24 @@ def a_verifier(jours=2.0):
             prix, quand, source = f[0], f_at, "fichier"
         else:
             prix, quand, source = None, None, None
-        try:
-            qte = float(str(r.get("qty") or "0").replace(" ", "").replace("\u202f", "").replace(",", "."))
-        except ValueError:
-            qte = 0
+        q = e["quantite"]
         entree = {
-            "itemId": ident, "nom": nom, "quantite": qte if qte != int(qte) else int(qte),
+            "itemId": ident, "nom": e["nom"], "quantite": int(q) if q == int(q) else q,
             "prix": prix, "date": _iso(quand) if quand else None, "source": source,
+            "origines": e["origines"], "objets": e["objets"],
         }
         if prix is None:
             entree["raison"] = "inconnu"
         elif quand < limite:
             entree["raison"] = "ancien"
-        if "raison" in entree:
-            a_faire.append(entree)
-        else:
-            a_jour.append(entree)
+        (a_faire if "raison" in entree else a_jour).append(entree)
+
+    def priorite(x):
+        return (0 if "craft" in x["origines"] else 1, 0 if x["raison"] == "inconnu" else 1, x["date"] or "")
+    a_faire.sort(key=priorite)
     return {
         "objet": str(brouillon.get("name") or "").strip(),
+        "sources": [s for s in SOURCES if s in sources],
         "seuil_jours": jours,
         "genere": _iso(maintenant),
         "a_verifier": a_faire,
@@ -435,10 +478,13 @@ class Gestionnaire(SimpleHTTPRequestHandler):
                 jours = float(params.get("jours", "2").replace(",", "."))
                 if not 0 <= jours <= 3650:
                     raise ValueError
+                sources = tuple(x for x in params.get("sources", ",".join(SOURCES_PAR_DEFAUT)).split(",") if x)
+                if not sources or any(x not in SOURCES for x in sources):
+                    raise ValueError
             except ValueError:
-                return self.repondre_json(HTTPStatus.BAD_REQUEST, {"erreur": "jours invalide"})
+                return self.repondre_json(HTTPStatus.BAD_REQUEST, {"erreur": "jours ou sources invalide (sources : craft,atelier)"})
             with verrou:
-                return self.repondre_json(HTTPStatus.OK, a_verifier(jours))
+                return self.repondre_json(HTTPStatus.OK, a_verifier(jours, sources))
         if c == "/api/prix":
             try:
                 return self.repondre_json(HTTPStatus.OK, lire_prix())

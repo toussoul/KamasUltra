@@ -42,11 +42,13 @@ fonctionne comme avant : les données ne restent que dans le navigateur.
 
 Sur le serveur local, sans authentification (réseau local de confiance) :
 
-- `GET /api/a-verifier?jours=2` : ressources du craft en cours (Investissements → Craft) dont le
-  prix est inconnu ou plus vieux que `jours` (2 par défaut). Réponse :
-  `{"objet", "seuil_jours", "genere", "a_verifier": [{"itemId", "nom", "quantite", "prix", "date",
-  "source", "raison": "inconnu" | "ancien"}], "a_jour": [...]}`. `itemId` peut être `null`
-  si la ressource n'a pas pu être identifiée.
+- `GET /api/a-verifier?jours=2&sources=atelier` : ressources dont le prix est inconnu ou plus
+  vieux que `jours` (2 par défaut). `sources` : `atelier` (par défaut, les objets de l'Atelier),
+  `craft` (la recette ouverte dans Investissements → Craft) ou `craft,atelier`. Réponse :
+  `{"objet", "sources", "seuil_jours", "genere", "a_verifier": [{"itemId", "nom", "quantite",
+  "prix", "date", "source", "origines", "objets", "raison": "inconnu" | "ancien"}], "a_jour": [...]}`.
+  Ordre : craft d'abord, puis prix inconnus, puis du plus ancien au plus récent. `itemId` peut
+  être `null` si la ressource n'a pas pu être identifiée.
 - `PUT /api/prix` avec l'en-tête `X-KamasUltra: 1` et le corps
   `{"itemId": 22222, "price": 9000, "at": <horodatage en ms, facultatif>}` : met à jour
   `Price.json` comme une saisie sur le site. Le site ouvert reprend le nouveau prix en moins de 20 s.
