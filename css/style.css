@@ -294,3 +294,11 @@
 /* ---------- Craft : origine et date des prix ---------- */
 .iv-pdate { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.35; }
 .iv-use { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
+
+/* ---------- Almanax : prix de l'offrande ---------- */
+.alm-prix { font-size: 14px; margin: 0 0 6px; line-height: 1.5; }
+.alm-prix small { color: var(--muted); font-size: 12px; }
+.alm-prix .muted { color: var(--muted); }
+.alm-side { flex: none; max-width: 40%; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
+.alm-side .alm-rb { max-width: none; }
+.alm-rp { font-weight: 700; font-size: 14px; white-space: nowrap; }

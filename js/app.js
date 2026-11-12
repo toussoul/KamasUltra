@@ -1245,9 +1245,11 @@ function almNorm(o) {
   var imgs = item.image_urls || item.images || {};
   var img = typeof imgs === 'string' ? imgs : (imgs.icon || imgs.sd || imgs.hq || imgs.hd || item.image_url || item.img || '');
   var q = tr.quantity != null ? tr.quantity : o.quantity;
+  var id = parseInt(item.ankama_id != null ? item.ankama_id : item.id, 10);
   var r = {
     date: String(o.date || ''), btype: String(btype || ''), bdesc: String(bonus.description || bonus.text || ''),
-    iname: String(item.name || item.title || ''), qty: isFinite(+q) ? +q : null, img: safeUrl(img)
+    iname: String(item.name || item.title || ''), qty: isFinite(+q) ? +q : null, img: safeUrl(img),
+    id: id > 0 ? id : null, reward: isFinite(+o.reward_kamas) && o.reward_kamas != null ? +o.reward_kamas : null
   };
   return isNaN(ymdToTs(r.date)) ? null : r;
 }
@@ -1288,7 +1290,7 @@ function almLoad(force) {
   if (!force) {
     try {
       var c = JSON.parse(localStorage.getItem('kc_alm') || 'null');
-      if (c && c.day === today && Array.isArray(c.list) && c.list.length) {
+      if (c && c.v === 2 && c.day === today && Array.isArray(c.list) && c.list.length) {
         alm.list = c.list; alm.status = 'ok'; almRender(); return;
       }
     } catch (e) {}
@@ -1297,7 +1299,7 @@ function almLoad(force) {
   almRender();
   almFetchList().then(function (list) {
     alm.list = list; alm.status = 'ok';
-    try { localStorage.setItem('kc_alm', JSON.stringify({ day: today, list: list })); } catch (e) {}
+    try { localStorage.setItem('kc_alm', JSON.stringify({ v: 2, day: today, list: list })); } catch (e) {}
     almRender();
   }).catch(function (err) {
     alm.status = 'error';
@@ -1310,6 +1312,16 @@ function almImg(url, cls) {
   return url ? '<img class="' + cls + '" src="' + esc(url) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">' : '';
 }
 function almDateFr(s, opts) { return new Date(ymdToTs(s)).toLocaleDateString('fr-FR', opts); }
+// Prix de l'offrande : le plus récent entre ton prix saisi et le fichier de prix
+function almPrice(x) {
+  var i = rsInfo(x.iname, x.id, 0);
+  if (!(i.price > 0)) return null;
+  var q = x.qty != null ? x.qty : 1;
+  return { unit: i.price, total: i.price * q, info: i };
+}
+function almPriceSrc(i) {
+  return (i.src === 'fichier' ? 'Price.json' : 'ton prix') + (i.at > 0 ? ', ' + dateFr(i.at) : '') + (RS_FRESH[i.fr] ? ', ' + RS_FRESH[i.fr] : '');
+}
 
 function almRender() {
   if (alm.status === 'loading' || alm.status === 'idle') {
@@ -1337,10 +1349,22 @@ function almRender() {
   almEl.today.innerHTML = '<div class="alm-today">' + almImg(first.img, 'alm-big') + '<div class="alm-tx">' +
     '<div class="k">' + (isToday ? 'Almanax du jour' : 'Prochain Almanax') + ' · ' + esc(almDateFr(first.date, long)) + '</div>' +
     '<div class="alm-item">' + esc(first.iname || '—') + (first.qty != null ? ' <b>× ' + fmtInt(first.qty) + '</b>' : '') + '</div>' +
+    almPriceHtml(first) +
     (first.btype || first.bdesc ? '<div class="alm-bonus">' + (first.btype ? '<b>' + esc(first.btype) + '</b>' : '') +
       (first.btype && first.bdesc ? ' : ' : '') + esc(first.bdesc) + '</div>' : '') + '</div></div>';
 
   var rest = upcoming.slice(1);
+  function almPriceHtml(x) {
+    var p = almPrice(x), rw = x.reward;
+    var h = '<div class="alm-prix">';
+    h += p ? 'Coût : <b>' + fmtInt(p.total) + ' K</b>' + (x.qty > 1 ? ' (' + fmtInt(p.unit) + ' K l\'unité)' : '') +
+      ' <small>· ' + esc(almPriceSrc(p.info)) + '</small>' : 'Coût : <span class="muted">prix inconnu</span>';
+    if (rw != null) {
+      h += '<br>Récompense : <b>' + fmtInt(rw) + ' K</b>';
+      if (p) { var bil = rw - p.total; h += ' · bilan <b class="' + (bil >= 0 ? 'pos' : 'neg') + '">' + (bil > 0 ? '+' : '') + fmtInt(bil) + ' K</b>'; }
+    }
+    return h + '</div>';
+  }
   var types = {};
   rest.forEach(function (x) { if (x.btype) types[x.btype] = 1; });
   var names = Object.keys(types).sort();
@@ -1356,10 +1380,14 @@ function almRender() {
     return '<div class="alm-row">' + almImg(x.img, 'alm-ico') + '<div class="alm-main">' +
       '<div class="alm-rd">' + esc(almDateFr(x.date, { weekday: 'short', day: 'numeric', month: 'short', year: n > 300 ? 'numeric' : undefined })) + (when ? ' · ' + when : '') + '</div>' +
       '<div class="alm-rn">' + esc(x.iname || '—') + (x.qty != null ? ' <b>× ' + fmtInt(x.qty) + '</b>' : '') + '</div></div>' +
-      (x.btype ? '<div class="alm-rb">' + esc(x.btype) + '</div>' : '') + '</div>';
+      '<div class="alm-side">' + almRowPrice(x) + (x.btype ? '<div class="alm-rb">' + esc(x.btype) + '</div>' : '') + '</div></div>';
   }).join('') : '<div class="soon">Aucun jour avec ce bonus.</div>');
   document.getElementById('almFilter').addEventListener('change', function () { alm.filter = this.value; alm.shown = 7; almRender(); });
   almEl.more.style.display = filtered.length > alm.shown ? '' : 'none';
+}
+function almRowPrice(x) {
+  var p = almPrice(x);
+  return '<div class="alm-rp" title="' + (p ? esc(almPriceSrc(p.info)) : 'prix inconnu') + '">' + (p ? fmtInt(p.total) + ' K' : '–') + '</div>';
 }
 almEl.more.addEventListener('click', function () { alm.shown += 30; almRender(); });
 
