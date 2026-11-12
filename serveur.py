@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
 """Serveur local de KamasUltra.
 
-Sert le site sur http://127.0.0.1:8765/ et garde les données dans
+Sert le site sur le port 8765 (toutes les interfaces : accessible depuis le
+réseau local, par exemple un téléphone) et garde les données dans
 donnees/kamasultra.json, pour qu'elles survivent au nettoyage du navigateur.
 Une copie par jour est conservée dans donnees/historique/ (les 30 dernières).
 
 Aucune dépendance : Python 3.8 ou plus suffit.
-    python3 serveur.py              (port 8765)
+    python3 serveur.py                    (0.0.0.0:8765)
     python3 serveur.py --port 9000
+    python3 serveur.py --hote 127.0.0.1   (cet ordinateur seulement)
 """
 
 import argparse
 import datetime
+import ipaddress
 import json
 import os
 import shutil
+import socket
 import sys
 import threading
 import webbrowser
@@ -32,6 +36,26 @@ PREFIXE = "ku_"
 CHEMINS_INTERDITS = ("/donnees", "/.git", "/serveur.py")
 
 verrou = threading.Lock()
+_nom = socket.gethostname().lower()
+NOMS_LOCAUX = {"localhost", _nom, _nom.split(".")[0], _nom.split(".")[0] + ".local"}
+
+
+def adresses_reseau():
+    """Adresses IPv4 de cette machine sur le réseau local (pour y accéder depuis un autre appareil)."""
+    vues = set()
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            vues.add(info[4][0])
+    except OSError:
+        pass
+    try:  # adresse de la route par défaut (aucun paquet n'est envoyé)
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("192.0.2.1", 9))
+        vues.add(s.getsockname()[0])
+        s.close()
+    except OSError:
+        pass
+    return sorted(a for a in vues if not a.startswith("127."))
 
 
 def lire():
@@ -278,9 +302,21 @@ class Gestionnaire(SimpleHTTPRequestHandler):
 
     # --- garde-fous -------------------------------------------------------
     def hote_local(self):
-        # Refuse les noms d'hôte inconnus (protection contre le « DNS rebinding »)
-        hote = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]")
-        return hote in ("127.0.0.1", "localhost", "::1")
+        # Protection contre le « DNS rebinding » : un site malveillant ne peut viser ce serveur
+        # que par un nom de domaine qu'il contrôle. On n'accepte donc qu'une adresse IP écrite
+        # telle quelle (127.0.0.1, 192.168.1.20…), localhost ou le nom de cette machine.
+        hote = (self.headers.get("Host") or "").strip()
+        if hote.startswith("["):
+            hote = hote[1:].split("]", 1)[0]
+        elif hote.count(":") == 1:
+            hote = hote.split(":", 1)[0]
+        hote = hote.lower().rstrip(".")
+        try:
+            ipaddress.ip_address(hote)
+            return True
+        except ValueError:
+            pass
+        return hote in NOMS_LOCAUX
 
     def chemin(self):
         return self.path.split("?", 1)[0].split("#", 1)[0]
@@ -386,11 +422,17 @@ class Gestionnaire(SimpleHTTPRequestHandler):
 def main():
     p = argparse.ArgumentParser(description="Serveur local de KamasUltra")
     p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--hote", default="0.0.0.0",
+                   help="adresse d'écoute (0.0.0.0 = tout le réseau local, 127.0.0.1 = cet ordinateur seulement)")
     p.add_argument("--sans-navigateur", action="store_true", help="ne pas ouvrir le navigateur")
     args = p.parse_args()
+    try:
+        sys.stdout.reconfigure(line_buffering=True)  # messages visibles tout de suite, même redirigés
+    except AttributeError:
+        pass
 
     try:
-        serveur = ThreadingHTTPServer(("127.0.0.1", args.port), Gestionnaire)
+        serveur = ThreadingHTTPServer((args.hote, args.port), Gestionnaire)
     except OSError as e:
         print("Impossible d'utiliser le port %d (%s). KamasUltra tourne peut-être déjà :" % (args.port, e))
         print("  http://127.0.0.1:%d/" % args.port)
@@ -398,6 +440,10 @@ def main():
 
     adresse = "http://127.0.0.1:%d/" % args.port
     print("KamasUltra : %s" % adresse)
+    if args.hote in ("0.0.0.0", ""):
+        for ip in adresses_reseau():
+            print("  depuis le réseau local : http://%s:%d/" % (ip, args.port))
+        print("  Attention : sans mot de passe, tout appareil du réseau peut lire et modifier tes données.")
     print("Données : %s" % FICHIER)
     print("Ctrl+C pour arrêter.")
     if not args.sans_navigateur:

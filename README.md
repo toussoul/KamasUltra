@@ -13,6 +13,11 @@ Il faut Python 3.8 ou plus, sans rien d'autre à installer.
 Le navigateur s'ouvre sur <http://127.0.0.1:8765/>. Laisse la fenêtre du serveur ouverte
 pendant que tu utilises le site (Ctrl+C pour l'arrêter). Autre port : `./lancer.sh --port 9000`.
 
+Le serveur écoute sur toutes les interfaces (`0.0.0.0`) : depuis un téléphone ou un autre PC du
+même réseau, utilise l'adresse « depuis le réseau local » affichée au démarrage. Il n'y a pas de
+mot de passe : tout appareil du réseau peut lire et modifier les données. Pour limiter l'accès à
+cet ordinateur : `./lancer.sh --hote 127.0.0.1`.
+
 Les données sont écrites dans `donnees/kamasultra.json`, avec une copie par jour dans
 `donnees/historique/` (30 jours). Ce dossier n'est pas versionné par git.
 Au premier lancement, ce que le navigateur contenait déjà est recopié sur le disque.
