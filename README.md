@@ -38,6 +38,19 @@ copie est gardée dans `donnees/historique/` avant la première modification du 
 Sans serveur (fichier `index.html` ouvert directement, ou GitHub Pages), le site
 fonctionne comme avant : les données ne restent que dans le navigateur.
 
+## API pour d'autres programmes (Update_HDV_price)
+
+Sur le serveur local, sans authentification (réseau local de confiance) :
+
+- `GET /api/a-verifier?jours=2` : ressources du craft en cours (Investissements → Craft) dont le
+  prix est inconnu ou plus vieux que `jours` (2 par défaut). Réponse :
+  `{"objet", "seuil_jours", "genere", "a_verifier": [{"itemId", "nom", "quantite", "prix", "date",
+  "source", "raison": "inconnu" | "ancien"}], "a_jour": [...]}`. `itemId` peut être `null`
+  si la ressource n'a pas pu être identifiée.
+- `PUT /api/prix` avec l'en-tête `X-KamasUltra: 1` et le corps
+  `{"itemId": 22222, "price": 9000, "at": <horodatage en ms, facultatif>}` : met à jour
+  `Price.json` comme une saisie sur le site. Le site ouvert reprend le nouveau prix en moins de 20 s.
+
 ## Organisation
 
 | Fichier | Rôle |

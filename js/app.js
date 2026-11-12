@@ -1663,20 +1663,32 @@ function rsResolveIds() {
   }).catch(function () { todo.forEach(function (t) { delete rsTried[t.key]; }); });
 }
 
+function rsFetchFile() {
+  return fetch('api/prix', { cache: 'no-store' }).then(function (r) {
+    if (!r.ok) throw new Error('erreur ' + r.status);
+    return r.json();
+  });
+}
+function rsApplyFile(j) {
+  rsFile.prix = j && j.prix && typeof j.prix === 'object' ? j.prix : {};
+  rsFile.fichiers = Array.isArray(j.fichiers) ? j.fichiers : [];
+  rsFile.serveurs = Array.isArray(j.serveurs) ? j.serveurs : [];
+  rsFile.etat = 'ok';
+  refreshViews();
+}
 function rsLoadFile() {
   if (!(window.kuStockage && window.kuStockage.mode() === 'disque')) { rsFile.etat = 'absent'; rsFileRender(); return; }
   rsFile.etat = 'chargement'; rsFileRender();
-  fetch('api/prix', { cache: 'no-store' }).then(function (r) {
-    if (!r.ok) throw new Error('erreur ' + r.status);
-    return r.json();
-  }).then(function (j) {
-    rsFile.prix = j && j.prix && typeof j.prix === 'object' ? j.prix : {};
-    rsFile.fichiers = Array.isArray(j.fichiers) ? j.fichiers : [];
-    rsFile.serveurs = Array.isArray(j.serveurs) ? j.serveurs : [];
-    rsFile.etat = 'ok';
-    refreshViews();
-  }).catch(function () { rsFile.etat = 'erreur'; rsFileRender(); });
+  rsFetchFile().then(rsApplyFile).catch(function () { rsFile.etat = 'erreur'; rsFileRender(); });
 }
+// Les fichiers de prix peuvent changer sans le site (Update_HDV_price, récupération) :
+// toutes les 20 s, onglet visible, on relit s'ils ont été modifiés sur le disque.
+setInterval(function () {
+  if (rsFile.etat !== 'ok' || document.visibilityState !== 'visible') return;
+  rsFetchFile().then(function (j) {
+    if (JSON.stringify(j.fichiers || []) !== JSON.stringify(rsFile.fichiers)) rsApplyFile(j);
+  }).catch(function () {});
+}, 20000);
 
 rsEl.list.addEventListener('input', function (e) {
   var t = e.target;

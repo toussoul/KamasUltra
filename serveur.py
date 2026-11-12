@@ -124,10 +124,87 @@ def lire_prix():
                 if ancien is None or date > ancien[1]:
                     prix[ident] = [valeur, date, str(e.get("quality") or ""), str(e.get("freshness") or "")]
                 n += 1
-        fichiers.append({"nom": nom, "date": datetime.datetime.fromtimestamp(mtime).astimezone().isoformat(timespec="seconds"), "prix": n})
+        fichiers.append({"nom": nom, "date": datetime.datetime.fromtimestamp(mtime).astimezone().isoformat(timespec="milliseconds"), "prix": n})
     valeur = {"fichiers": fichiers, "serveurs": sorted(serveurs), "prix": prix}
     _cache_prix.update(cle=cle, valeur=valeur)
     return valeur
+
+
+def _cle(nom):
+    return str(nom or "").strip().lower()
+
+
+def _ms(date_iso):
+    try:
+        return datetime.datetime.fromisoformat(str(date_iso).replace("Z", "+00:00")).timestamp() * 1000
+    except ValueError:
+        return 0
+
+
+def a_verifier(jours=2.0):
+    """Ressources du craft en cours (Investissements → Craft) dont le prix est inconnu
+    ou plus vieux que `jours`. Même règle que le site : entre le prix saisi et celui
+    des fichiers de prix, le plus récent compte.
+    """
+    contenu = lire() or {}
+    data = contenu.get("data") if isinstance(contenu, dict) else {}
+    data = data if isinstance(data, dict) else {}
+
+    def charger(cle, defaut):
+        try:
+            v = json.loads(data.get(cle) or "null")
+        except ValueError:
+            return defaut
+        return v if isinstance(v, type(defaut)) else defaut
+
+    brouillon, saisis, ids = charger("ku_iv_draft", {}), charger("ku_prix", {}), charger("ku_ids", {})
+    fichier = lire_prix()["prix"]
+    maintenant = datetime.datetime.now().timestamp() * 1000
+    limite = maintenant - jours * 86400000
+    vus, a_faire, a_jour = set(), [], []
+    for r in brouillon.get("rows") or []:
+        if not isinstance(r, dict):
+            continue
+        nom = str(r.get("name") or "").strip()
+        if not nom or _cle(nom) in vus:
+            continue
+        vus.add(_cle(nom))
+        ident = r.get("id") if isinstance(r.get("id"), int) else ids.get(_cle(nom))
+        ident = ident if isinstance(ident, int) and ident > 0 else None
+        m = saisis.get(_cle(nom))
+        m = m if isinstance(m, dict) and isinstance(m.get("price"), (int, float)) and m["price"] > 0 else None
+        f = fichier.get(ident) if ident else None
+        m_at = float(m.get("at") or 0) if m else -1
+        f_at = _ms(f[1]) if f else -1
+        if m and m_at >= f_at:
+            prix, quand, source = m["price"], m_at, "saisi"
+        elif f:
+            prix, quand, source = f[0], f_at, "fichier"
+        else:
+            prix, quand, source = None, None, None
+        try:
+            qte = float(str(r.get("qty") or "0").replace(" ", "").replace("\u202f", "").replace(",", "."))
+        except ValueError:
+            qte = 0
+        entree = {
+            "itemId": ident, "nom": nom, "quantite": qte if qte != int(qte) else int(qte),
+            "prix": prix, "date": _iso(quand) if quand else None, "source": source,
+        }
+        if prix is None:
+            entree["raison"] = "inconnu"
+        elif quand < limite:
+            entree["raison"] = "ancien"
+        if "raison" in entree:
+            a_faire.append(entree)
+        else:
+            a_jour.append(entree)
+    return {
+        "objet": str(brouillon.get("name") or "").strip(),
+        "seuil_jours": jours,
+        "genere": _iso(maintenant),
+        "a_verifier": a_faire,
+        "a_jour": a_jour,
+    }
 
 
 def archiver_du_jour(chemin=FICHIER, prefixe="kamasultra"):
@@ -351,6 +428,17 @@ class Gestionnaire(SimpleHTTPRequestHandler):
             if contenu is None:
                 return self.repondre_json(HTTPStatus.OK, {"app": "KamasUltra", "absent": True})
             return self.repondre_json(HTTPStatus.OK, contenu)
+        if c == "/api/a-verifier":
+            try:
+                q = self.path.split("?", 1)[1] if "?" in self.path else ""
+                params = dict(p.split("=", 1) for p in q.split("&") if "=" in p)
+                jours = float(params.get("jours", "2").replace(",", "."))
+                if not 0 <= jours <= 3650:
+                    raise ValueError
+            except ValueError:
+                return self.repondre_json(HTTPStatus.BAD_REQUEST, {"erreur": "jours invalide"})
+            with verrou:
+                return self.repondre_json(HTTPStatus.OK, a_verifier(jours))
         if c == "/api/prix":
             try:
                 return self.repondre_json(HTTPStatus.OK, lire_prix())
