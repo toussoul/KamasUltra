@@ -1135,6 +1135,7 @@ function dashRender() {
 document.getElementById('goHdv').addEventListener('click', function () { showTab('hdv'); window.scrollTo(0, 0); });
 
 function refreshViews() {
+  rsRender();
   hdvRender();
   dashRender();
   almRender();
@@ -1321,10 +1322,16 @@ function atTotals() {
       if (!map[k]) { map[k] = { key: k, name: name, icon: r.icon || null, qty: 0, price: 0 }; order.push(k); }
       map[k].qty += q * n;
       if (!map[k].icon && r.icon) map[k].icon = r.icon;
-      if (nv(r.price) > 0) map[k].price = nv(r.price);
+      if (nv(r.price) > 0) map[k].rprice = nv(r.price);
     });
   });
-  return order.map(function (k) { return map[k]; });
+  var prix = rsPrices();
+  return order.map(function (k) {
+    var t = map[k], p = prix[k];
+    t.rprice = t.rprice || 0;
+    t.price = p && p.price > 0 ? p.price : t.rprice;
+    return t;
+  });
 }
 
 function atRender() {
@@ -1338,7 +1345,7 @@ function atRender() {
   atEl.items.innerHTML = items.map(function (it) {
     var rows = (it.rows || []).filter(function (r) { return r && r.name && nv(r.qty) > 0; }).length;
     var unit = 0;
-    (it.rows || []).forEach(function (r) { unit += nv(r.qty) * nv(r.price); });
+    (it.rows || []).forEach(function (r) { unit += nv(r.qty) * rsPriceOf(r.name, r.price); });
     var n = atQty(it.qty);
     return '<div class="at-item" data-id="' + esc(it.id) + '">' + imgTag(it.icon, '') +
       '<div class="at-name">' + esc(it.name || 'Sans nom') + '<small>' + rows + ' ressource' + (rows > 1 ? 's' : '') + '</small></div>' +
@@ -1433,6 +1440,75 @@ document.getElementById('ivAtAdd').addEventListener('click', function () {
   refreshViews();
   setMsg(ivEl.saveMsg, 'Ajouté à l\'Atelier : ' + n + ' × ' + name + '.', 'ok');
 });
+
+// ---------- Prix des ressources (pour les crafts de l'Atelier) ----------
+// Un prix unitaire par ressource, avec sa date : il remplace celui des recettes dans l'Atelier
+function rsPrices() {
+  try { var d = JSON.parse(localStorage.getItem('ku_prix') || '{}'); return d && typeof d === 'object' && !Array.isArray(d) ? d : {}; } catch (e) { return {}; }
+}
+function rsStore(d) { try { localStorage.setItem('ku_prix', JSON.stringify(d)); } catch (e) {} }
+function rsPriceOf(name, fallback) {
+  var p = rsPrices()[atKey(name || '')];
+  return p && p.price > 0 ? p.price : nv(fallback);
+}
+var rsEl = {
+  list: document.getElementById('rsList'), sum: document.getElementById('rsSum'),
+  total: document.getElementById('rsTotal'), missing: document.getElementById('rsMissing')
+};
+function rsNeed(t, stock) { return Math.max(0, t.qty - Math.max(0, nv(stock[t.key]))); }
+function rsRowSub(t, need, have, p) {
+  return 'Besoin : ' + fmtInt(t.qty) + (have > 0 ? ' · stock : ' + fmtInt(have) + ' · reste ' + fmtInt(need) : '') +
+    (p && p.price > 0 && p.at ? ' · prix du ' + dateFr(p.at) : (t.rprice > 0 ? ' · prix de la recette' : ''));
+}
+// Totaux seuls : appelé à chaque frappe, sans reconstruire la liste (le curseur reste en place)
+function rsTotals() {
+  var stock = atStock(), tot = atTotals(), prix = rsPrices(), sum = 0, missing = 0;
+  tot.forEach(function (t) {
+    var need = rsNeed(t, stock);
+    var sub = rsEl.list.querySelector('[data-rs-sub="' + CSS.escape(t.key) + '"]');
+    if (sub) sub.textContent = rsRowSub(t, need, Math.max(0, nv(stock[t.key])), prix[t.key]);
+    if (need > 0 && !(t.price > 0)) missing++;
+    sum += t.price * need;
+    var cell = rsEl.list.querySelector('[data-rs-tot="' + CSS.escape(t.key) + '"]');
+    if (cell) cell.textContent = t.price > 0 && need > 0 ? fmtInt(t.price * need) + ' K' : (need > 0 ? '–' : 'en stock');
+  });
+  rsEl.total.textContent = fmtInt(sum) + ' K';
+  rsEl.missing.textContent = fmtInt(missing);
+  rsEl.missing.className = 'v ' + (missing ? 'neg' : 'pos');
+}
+function rsRender() {
+  var tot = atTotals(), stock = atStock(), prix = rsPrices();
+  rsEl.sum.style.display = tot.length ? '' : 'none';
+  if (!tot.length) {
+    rsEl.list.innerHTML = '<div class="soon">Aucune ressource : ajoute d\'abord des objets à l\'Atelier depuis Investissements → Craft.</div>';
+    return;
+  }
+  rsEl.list.innerHTML = tot.map(function (t) {
+    var need = rsNeed(t, stock), p = prix[t.key];
+    return '<div class="at-row rs-row' + (need === 0 ? ' done' : '') + '">' + imgTag(t.icon, '') +
+      '<div class="at-name">' + esc(t.name) + '<small data-rs-sub="' + esc(t.key) + '"></small></div>' +
+      '<div class="input-wrap rs-in"><input type="text" data-num inputmode="decimal" data-rs="' + esc(t.key) + '" data-name="' + esc(t.name) + '"' +
+      ' aria-label="Prix unitaire de ' + esc(t.name) + '" placeholder="' + (t.rprice > 0 ? esc(fmtField(t.rprice)) : 'Prix') + '"' +
+      ' value="' + (p && p.price > 0 ? esc(fmtField(p.price)) : '') + '"><span class="unit">K</span></div>' +
+      '<div class="at-q rs-tot" data-rs-tot="' + esc(t.key) + '"></div></div>';
+  }).join('');
+  rsTotals();
+}
+rsEl.list.addEventListener('input', function (e) {
+  var t = e.target;
+  if (!t.dataset || !t.dataset.rs) return;
+  var d = rsPrices(), v = nv(t.value);
+  if (v > 0) d[t.dataset.rs] = { name: t.dataset.name, price: v, at: Date.now() };
+  else delete d[t.dataset.rs];
+  rsStore(d);
+  rsTotals();
+});
+// En quittant le champ : met à jour la date affichée et les coûts de l'Atelier
+rsEl.list.addEventListener('change', function (e) {
+  if (e.target.dataset && e.target.dataset.rs) { atRender(); dashRender(); }
+});
+document.getElementById('rsGoAtelier').addEventListener('click', function () { showTab('atelier'); window.scrollTo(0, 0); });
+document.getElementById('atGoPrix').addEventListener('click', function () { showTab('ressources'); window.scrollTo(0, 0); });
 
 // ---------- Sauvegarde : export / import de toutes les données du site ----------
 var BK_PREFIX = 'ku_';

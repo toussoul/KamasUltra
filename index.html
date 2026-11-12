@@ -26,6 +26,7 @@
     </div>
     <button data-tab="inventaire">Inventaire 📦</button>
     <button data-tab="atelier">Atelier 🛠️</button>
+    <button data-tab="ressources">Prix des ressources 💰</button>
     <button data-tab="hdv">Hôtel de vente 🏷️</button>
     <div class="grp">
       <button data-tab="calculateurs">Calculateurs 🧮 <span class="chev">▸</span></button>
@@ -247,10 +248,25 @@
       <div id="atShop"></div>
       <div class="actions">
         <button class="btn-s" id="atCopy">📋 Copier la liste</button>
+        <button class="btn-s alt" id="atGoPrix">💰 Prix des ressources</button>
         <button class="btn-s alt" id="atUncheck">Décocher tout</button>
         <button class="btn-s alt" id="atClear">🗑 Vider l'Atelier</button>
       </div>
       <div class="msg" id="atMsg" style="margin-bottom:0"></div>
+    </div>
+  </section>
+
+  <section id="ressources">
+    <h2>Prix des ressources 💰</h2>
+    <p class="opt" style="margin-top:0">Les ressources nécessaires aux objets de ton Atelier, stock déduit. Les prix saisis ici
+      remplacent ceux des recettes dans l'Atelier ; un prix en gris vient de la recette.</p>
+    <div class="result" id="rsSum">
+      <div class="card"><div class="k">Coût total à acheter</div><div class="v" id="rsTotal">–</div></div>
+      <div class="card"><div class="k">Prix manquants</div><div class="v" id="rsMissing">–</div></div>
+    </div>
+    <div class="iv-sec" style="margin-top:14px">
+      <div id="rsList"></div>
+      <div class="actions"><button class="btn-s alt" id="rsGoAtelier">🛠️ Retour à l'Atelier</button></div>
     </div>
   </section>
 

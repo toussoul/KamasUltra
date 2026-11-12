@@ -279,3 +279,14 @@
   position: sticky; top: 0; z-index: 50; margin: 0 0 12px; padding: 10px 14px;
   border-radius: 10px; background: #4a2626; color: #ffd9d9; font-size: 14px;
 }
+
+/* ---------- Prix des ressources ---------- */
+.rs-in { flex: 0 0 150px; gap: 6px; }
+.rs-in input { min-width: 0; width: 100%; text-align: right; }
+.rs-tot { min-width: 84px; }
+.rs-row.done .rs-in { opacity: .5; }
+@media (max-width: 520px) {
+  .rs-row { flex-wrap: wrap; }
+  .rs-row .at-name { flex: 1 1 100%; }
+  .rs-in { flex: 1 1 120px; }
+}
