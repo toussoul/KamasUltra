@@ -439,11 +439,71 @@ function ivRenderRows() {
       '<td><div class="rname">' + imgTag(r.icon, 'ri') +
       '<input type="text" data-i="' + i + '" data-f="name" placeholder="Ressource" value="' + esc(r.name) + '" style="min-width:140px"></div></td>' +
       '<td><input type="text" data-num inputmode="decimal" min="0" step="any" data-i="' + i + '" data-f="qty" placeholder="0" value="' + esc(fmtField(r.qty)) + '" style="min-width:64px"></td>' +
-      '<td><input type="text" data-num inputmode="decimal" min="0" step="any" data-i="' + i + '" data-f="price" placeholder="0" value="' + esc(fmtField(r.price)) + '"></td>' +
+      '<td><input type="text" data-num inputmode="decimal" min="0" step="any" data-i="' + i + '" data-f="price" placeholder="0" value="' + esc(fmtField(r.price)) + '">' +
+      '<small class="iv-pdate" data-pd="' + i + '"></small></td>' +
       '</tr>';
   });
   ivEl.tbody.innerHTML = h;
+  ivPriceLabels();
 }
+
+// ----- Prix des ressources dans le craft -----
+// r.src : 'auto' (repris du fichier de prix ou de tes prix saisis) ou 'manuel' (tapé ici) ; r.at : date du prix.
+// Un prix « auto » suit le prix le plus récent tant que le craft n'est pas déjà enregistré ;
+// un prix tapé ici n'est jamais remplacé, un prix plus récent est seulement proposé.
+function ivSyncPrices() {
+  if (iv.editing) return false; // craft enregistré : son coût ne bouge plus tout seul
+  var changed = false;
+  iv.rows.forEach(function (r) {
+    if (!String(r.name || '').trim()) return;
+    var manual = r.src === 'manuel' || (!r.src && nv(r.price) > 0); // anciens brouillons : prix tapé
+    if (manual) return;
+    var i = rsInfo(r.name, r.id, 0);
+    if (!(i.price > 0)) return;
+    if (nv(r.price) !== i.price || r.at !== i.at || r.from !== i.src) {
+      r.price = String(i.price); r.src = 'auto'; r.at = i.at; r.from = i.src; r.fr = i.fr || '';
+      changed = true;
+    }
+  });
+  return changed;
+}
+function ivPriceLabel(r, i) {
+  var name = String(r.name || '').trim();
+  if (!name) return '';
+  var info = rsInfo(r.name, r.id, 0), txt;
+  if (nv(r.price) > 0 && r.src === 'auto') {
+    txt = (r.from === 'fichier' ? 'Price.json' : 'ton prix') + (r.at > 0 ? ' · ' + dateFr(r.at) : '') +
+      (RS_FRESH[r.fr] ? ' (' + RS_FRESH[r.fr] + ')' : '');
+  } else if (nv(r.price) > 0) {
+    txt = 'tapé ici' + (r.at > 0 ? ' le ' + dateFr(r.at) : '');
+  } else {
+    txt = info.price > 0 ? '' : 'aucun prix connu';
+  }
+  // Prix plus récent disponible (prix tapé, craft enregistré, ou champ vide)
+  var newer = info.price > 0 && (info.price !== nv(r.price)) && (!(nv(r.price) > 0) || info.at > (+r.at || 0));
+  return esc(txt) + (newer ? (txt ? ' · ' : '') + '<button type="button" class="iv-use" data-use="' + i + '">utiliser ' +
+    esc(fmtInt(info.price)) + ' K (' + esc(info.src === 'fichier' ? 'Price.json' : 'ton prix') + (info.at > 0 ? ', ' + esc(dateFr(info.at)) : '') + ')</button>' : '');
+}
+function ivPriceLabels() {
+  iv.rows.forEach(function (r, i) {
+    var n = ivEl.tbody.querySelector('[data-pd="' + i + '"]');
+    if (n) n.innerHTML = ivPriceLabel(r, i);
+  });
+}
+// Après un chargement ou une relecture du fichier de prix
+function ivRefreshPrices() {
+  if (ivSyncPrices()) { ivRenderRows(); ivCompute(); } else ivPriceLabels();
+}
+ivEl.tbody.addEventListener('click', function (e) {
+  var b = e.target.closest ? e.target.closest('[data-use]') : null;
+  if (!b) return;
+  var r = iv.rows[+b.dataset.use];
+  if (!r) return;
+  var i = rsInfo(r.name, r.id, 0);
+  if (!(i.price > 0)) return;
+  r.price = String(i.price); r.src = 'auto'; r.at = i.at; r.from = i.src; r.fr = i.fr || '';
+  ivRenderRows(); ivCompute();
+});
 
 function ivCalc() {
   var cout = 0, subs = [];
@@ -477,12 +537,13 @@ function ivApply(d) {
   ivEl.name.value = d.name || '';
   ivEl.prix.value = fmtField(d.prix);
   iv.rows = (d.rows && d.rows.length) ? d.rows.map(function (r) {
-    return { name: r.name || '', qty: r.qty, price: r.price, icon: r.icon, id: r.id };
+    return { name: r.name || '', qty: r.qty, price: r.price, icon: r.icon, id: r.id, src: r.src, at: r.at, from: r.from, fr: r.fr };
   }) : blankRows(8);
   ivEl.avant.value = fmtField(d.avant);
   ivEl.apres.value = fmtField(d.apres);
   iv.editing = d.editing || null;
   iv.icon = d.icon || null;
+  ivSyncPrices();
   ivRenderHead();
   ivRenderRows();
   ivCompute();
@@ -492,7 +553,12 @@ function ivApply(d) {
 ivEl.tbody.addEventListener('input', function (e) {
   var t = e.target;
   if (t.dataset && t.dataset.f) {
-    iv.rows[+t.dataset.i][t.dataset.f] = t.value;
+    var r = iv.rows[+t.dataset.i];
+    r[t.dataset.f] = t.value;
+    if (t.dataset.f === 'price') { r.src = 'manuel'; r.at = Date.now(); r.from = ''; r.fr = ''; }
+    if (t.dataset.f === 'name') r.id = null; // autre ressource : l'identifiant ne vaut plus
+    var n = ivEl.tbody.querySelector('[data-pd="' + t.dataset.i + '"]');
+    if (n) n.innerHTML = ivPriceLabel(r, +t.dataset.i);
     ivCompute();
   }
 });
@@ -550,18 +616,16 @@ function ivImportId(id) {
       });
     })
     .then(function (res) {
-      // Prix repris de la page Prix des ressources (seulement à l'import : un craft enregistré garde les siens)
-      var repris = 0;
       iv.rows = res.rec.ingredientIds.map(function (rid, k) {
-        var info = res.infos[k + 1], p = rsInfo(info.name, rid, 0);
-        var price = p.price > 0 ? String(p.price) : '';
-        if (price) repris++;
-        return { name: info.name, icon: info.icon, id: rid, qty: res.rec.quantities ? res.rec.quantities[k] : '', price: price };
+        var info = res.infos[k + 1];
+        return { name: info.name, icon: info.icon, id: rid, qty: res.rec.quantities ? res.rec.quantities[k] : '', price: '' };
       });
       var head = res.infos[0];
       if (head.name.indexOf('Ressource n°') !== 0) ivEl.name.value = head.name; // sinon on garde la saisie
       iv.icon = head.icon;
       iv.editing = null;
+      ivSyncPrices(); // prix repris automatiquement (fichier de prix ou tes prix saisis)
+      var repris = iv.rows.filter(function (r) { return r.src === 'auto'; }).length;
       ivRenderHead();
       ivRenderRows();
       ivCompute();
@@ -1144,6 +1208,7 @@ document.getElementById('goHdv').addEventListener('click', function () { showTab
 
 function refreshViews() {
   rsRender();
+  ivRefreshPrices();
   hdvRender();
   dashRender();
   almRender();

@@ -290,3 +290,7 @@
   .rs-row .at-name { flex: 1 1 100%; }
   .rs-in { flex: 1 1 120px; }
 }
+
+/* ---------- Craft : origine et date des prix ---------- */
+.iv-pdate { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.35; }
+.iv-use { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
