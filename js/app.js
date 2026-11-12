@@ -622,25 +622,41 @@ ivEl.clear.addEventListener('click', function () {
   setMsg(ivEl.saveMsg, '');
 });
 // ----- Recherche d'item (menu déroulant), réutilisable pour plusieurs champs -----
-function slugify(s) {
-  return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+// Texte comparable au « slug » de DofusDB : minuscules, sans accents (« Étreinte » → « etreinte »)
+function plain(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/’/g, '\'');
 }
+var SUGG_MAX = 15;
 function fetchItems(term) {
+  // Chaque mot tapé doit apparaître, dans n'importe quel ordre ; les élisions (l', d') sont ignorées
+  var words = plain(term).split(/[^a-z0-9]+/).filter(function (w) { return w.length > 1 || /\d/.test(w); });
+  if (!words.length) return Promise.resolve([]);
+  var all = '^' + words.map(function (w) { return '(?=.*' + w + ')'; }).join('');
   var rx = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  var base = API + '/items?lang=fr&$limit=12&$select[]=id&$select[]=name&$select[]=level&$select[]=iconId';
+  var base = API + '/items?lang=fr&$limit=50&$select[]=id&$select[]=name&$select[]=slug&$select[]=level&$select[]=iconId';
   // Plusieurs formulations tentées l'une après l'autre jusqu'à obtenir des résultats
   var tries = [
-    base + '&name.fr[$regex]=' + encodeURIComponent(rx) + '&name.fr[$options]=i',
-    base + '&slug.fr[$regex]=' + encodeURIComponent(slugify(term))
+    base + '&slug.fr[$regex]=' + encodeURIComponent(all),
+    base + '&name.fr[$regex]=' + encodeURIComponent(rx) + '&name.fr[$options]=i'
   ];
+  var q = words.join(' ');
+  // Pertinence : nom qui commence par la saisie, puis un mot qui commence par le premier mot, puis le plus court
+  function rank(o) {
+    var n = plain(o.name);
+    if (n.indexOf(q) === 0) return 0;
+    if (n.indexOf(q) >= 0) return 1;
+    if ((' ' + n).indexOf(' ' + words[0]) >= 0) return 2;
+    return 3;
+  }
   function attempt(k) {
     if (k >= tries.length) return Promise.resolve([]);
     return getJson(tries[k]).then(function (r) {
       var list = (r && r.data ? r.data : (Array.isArray(r) ? r : []))
         .map(function (o) { return { id: o.id, name: nameOf(o), level: o.level, icon: o.iconId }; })
         .filter(function (o) { return o.id && o.name; });
-      return list.length ? list : attempt(k + 1);
+      list.forEach(function (o) { o.r = rank(o); });
+      list.sort(function (a, b) { return a.r - b.r || a.name.length - b.name.length || a.name.localeCompare(b.name, 'fr'); });
+      return list.length ? list.slice(0, SUGG_MAX) : attempt(k + 1);
     }).catch(function () { return attempt(k + 1); });
   }
   return attempt(0);
