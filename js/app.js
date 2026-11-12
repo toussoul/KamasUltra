@@ -550,9 +550,13 @@ function ivImportId(id) {
       });
     })
     .then(function (res) {
+      // Prix repris de la page Prix des ressources (seulement à l'import : un craft enregistré garde les siens)
+      var prix = rsPrices(), repris = 0;
       iv.rows = res.rec.ingredientIds.map(function (_, k) {
-        var info = res.infos[k + 1];
-        return { name: info.name, icon: info.icon, qty: res.rec.quantities ? res.rec.quantities[k] : '', price: '' };
+        var info = res.infos[k + 1], p = prix[atKey(info.name)];
+        var price = p && p.price > 0 ? String(p.price) : '';
+        if (price) repris++;
+        return { name: info.name, icon: info.icon, qty: res.rec.quantities ? res.rec.quantities[k] : '', price: price };
       });
       var head = res.infos[0];
       if (head.name.indexOf('Ressource n°') !== 0) ivEl.name.value = head.name; // sinon on garde la saisie
@@ -561,7 +565,11 @@ function ivImportId(id) {
       ivRenderHead();
       ivRenderRows();
       ivCompute();
-      setMsg(ivEl.msg, 'Recette importée (' + iv.rows.length + ' ressources). Il te reste à saisir les prix.', 'ok');
+      var n = iv.rows.length;
+      setMsg(ivEl.msg, 'Recette importée (' + n + ' ressource' + (n > 1 ? 's' : '') + '). ' +
+        (repris === n ? 'Tous les prix viennent de la page Prix des ressources : vérifie-les.'
+          : repris ? repris + ' prix repris de la page Prix des ressources, il te reste à saisir les autres.'
+          : 'Il te reste à saisir les prix.'), 'ok');
     })
     .catch(function (err) {
       setMsg(ivEl.msg, 'Import impossible (' + err.message + '). Tu peux saisir la recette à la main.', 'err');
