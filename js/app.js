@@ -35,8 +35,9 @@ function showTab(name) {
 buttons.forEach(function (b) {
   b.addEventListener('click', function () {
     var grp = b.closest('.grp'), was = b.classList.contains('active');
+    var wasOpen = grp ? grp.classList.contains('open') : false; // état avant le clic (showTab ouvre le groupe de l'onglet actif)
     showTab(b.dataset.tab);
-    if (grp) { if (was) grp.classList.toggle('open'); }   // groupe : le menu reste ouvert pour choisir une page
+    if (grp) { if (was) grp.classList.toggle('open', !wasOpen); }   // groupe : un clic replie ou déplie le sous-menu
     else navOpen(false);
     window.scrollTo(0, 0);
   });
