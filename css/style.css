@@ -250,6 +250,10 @@
   .expl-list li { margin-bottom: 6px; }
   .bk-sum { font-size: 14px; color: var(--muted); margin-bottom: 14px; }
   .bk-btn { margin: 0; max-width: none; }
+  .sync-qr { background: #fff; border-radius: 12px; padding: 6px; width: min(340px, 100%); margin: 14px auto 8px; line-height: 0; }
+  .sync-qr svg { width: 100%; height: auto; display: block; }
+  .sync-nav { display: flex; align-items: center; justify-content: center; gap: 16px; color: var(--muted); }
+  .sync-nav button { width: 44px; font-size: 20px; }
   .btn-s.alt { background: var(--field); }
   .at-add { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-top: 14px; }
   .at-add .field { flex: 0 0 150px; }

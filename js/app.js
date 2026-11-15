@@ -1912,6 +1912,316 @@ function rsPush(key) {
 rsEl.reload.addEventListener('click', rsLoadFile);
 document.getElementById('rsGoAtelier').addEventListener('click', function () { showTab('atelier'); window.scrollTo(0, 0); });
 document.getElementById('atGoPrix').addEventListener('click', function () { showTab('ressources'); window.scrollTo(0, 0); });
+// ---------- Générateur de QR code (octets, correction d'erreurs M, versions 1 à 25) ----------
+var QR = (function () {
+  var ECC = [0, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 34, 28, 30, 28, 30];
+  var BLK = [0, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21];
+  var MAXV = 22;
+  function rawModules(v) {
+    var r = (16 * v + 128) * v + 64;
+    if (v >= 2) { var n = Math.floor(v / 7) + 2; r -= (25 * n - 10) * n - 55; if (v >= 7) r -= 36; }
+    return r;
+  }
+  function dataCw(v) { return Math.floor(rawModules(v) / 8) - ECC[v] * BLK[v]; }
+  function capacity(v) { return dataCw(v) - (v < 10 ? 2 : 3); } // octets utilisables
+  var EXP = [], LOG = [];
+  (function () { var x = 1; for (var i = 0; i < 255; i++) { EXP[i] = x; LOG[x] = i; x <<= 1; if (x & 256) x ^= 0x11D; } for (i = 255; i < 512; i++) EXP[i] = EXP[i - 255]; })();
+  function gmul(a, b) { return a && b ? EXP[LOG[a] + LOG[b]] : 0; }
+  function rsGen(deg) {
+    var g = [1];
+    for (var i = 0; i < deg; i++) {
+      var n = g.concat([0]);
+      for (var j = 0; j < g.length; j++) { n[j + 1] ^= gmul(g[j], EXP[i]); }
+      g = n;
+    }
+    return g; // g[0] = 1 (coefficient dominant)
+  }
+  function rsRem(data, deg) {
+    var g = rsGen(deg), res = [], i, j;
+    for (i = 0; i < deg; i++) res.push(0);
+    for (i = 0; i < data.length; i++) {
+      var f = data[i] ^ res[0];
+      res.shift(); res.push(0);
+      for (j = 0; j < deg; j++) res[j] ^= gmul(g[j + 1], f);
+    }
+    return res;
+  }
+  function alignPos(v) {
+    if (v === 1) return [];
+    var n = Math.floor(v / 7) + 2, size = v * 4 + 17;
+    var step = v === 32 ? 26 : Math.ceil((v * 4 + 4) / (n * 2 - 2)) * 2;
+    var r = [6];
+    for (var p = size - 7; r.length < n; p -= step) r.splice(1, 0, p);
+    return r;
+  }
+  function build(bytes) {
+    var v, need = bytes.length;
+    for (v = 1; v <= MAXV; v++) if (capacity(v) >= need) break;
+    if (v > MAXV) return null;
+    var size = v * 4 + 17, i, j;
+    // bits de données
+    var bits = [];
+    function put(val, len) { for (var k = len - 1; k >= 0; k--) bits.push((val >>> k) & 1); }
+    put(4, 4); put(bytes.length, v < 10 ? 8 : 16);
+    bytes.forEach(function (b) { put(b, 8); });
+    var cap = dataCw(v) * 8;
+    put(0, Math.min(4, cap - bits.length));
+    while (bits.length % 8) bits.push(0);
+    for (var pad = 0xEC; bits.length < cap; pad ^= 0xEC ^ 0x11) put(pad, 8);
+    var data = [];
+    for (i = 0; i < bits.length; i += 8) { var by = 0; for (j = 0; j < 8; j++) by = (by << 1) | bits[i + j]; data.push(by); }
+    // blocs + correction d'erreurs + entrelacement
+    var nb = BLK[v], ecl = ECC[v], rawCw = Math.floor(rawModules(v) / 8);
+    var nShort = nb - rawCw % nb, shortLen = Math.floor(rawCw / nb);
+    var blocks = [], ecs = [], off = 0;
+    for (i = 0; i < nb; i++) {
+      var len = shortLen - ecl + (i < nShort ? 0 : 1);
+      var d = data.slice(off, off + len); off += len;
+      blocks.push(d); ecs.push(rsRem(d, ecl));
+    }
+    var all = [];
+    for (i = 0; i < blocks[nb - 1].length; i++) blocks.forEach(function (b) { if (i < b.length) all.push(b[i]); });
+    for (i = 0; i < ecl; i++) ecs.forEach(function (e) { all.push(e[i]); });
+    // matrice
+    var m = [], fn = [];
+    for (i = 0; i < size; i++) { m.push(new Array(size).fill(0)); fn.push(new Array(size).fill(false)); }
+    function setf(x, y, dark) { m[y][x] = dark ? 1 : 0; fn[y][x] = true; }
+    function finder(cx, cy) {
+      for (var dy = -4; dy <= 4; dy++) for (var dx = -4; dx <= 4; dx++) {
+        var x = cx + dx, y = cy + dy; if (x < 0 || y < 0 || x >= size || y >= size) continue;
+        var d2 = Math.max(Math.abs(dx), Math.abs(dy));
+        setf(x, y, d2 !== 2 && d2 !== 4);
+      }
+    }
+    finder(3, 3); finder(size - 4, 3); finder(3, size - 4);
+    for (i = 0; i < size; i++) { if (!fn[6][i]) setf(i, 6, i % 2 === 0); if (!fn[i][6]) setf(6, i, i % 2 === 0); }
+    var ap = alignPos(v);
+    ap.forEach(function (cy, a) { ap.forEach(function (cx, b) {
+      if ((a === 0 && b === 0) || (a === 0 && b === ap.length - 1) || (a === ap.length - 1 && b === 0)) return;
+      for (var dy = -2; dy <= 2; dy++) for (var dx = -2; dx <= 2; dx++) setf(cx + dx, cy + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
+    }); });
+    // zones réservées (format) et bit sombre
+    for (i = 0; i < 9; i++) { fn[8][i] = true; fn[i][8] = true; }
+    for (i = 0; i < 8; i++) { fn[8][size - 1 - i] = true; fn[size - 1 - i][8] = true; }
+    setf(8, size - 8, true);
+    if (v >= 7) {
+      var rem = v; for (i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >>> 11) * 0x1F25);
+      var vb = (v << 12) | rem;
+      for (i = 0; i < 18; i++) {
+        var bit = (vb >>> i) & 1, a = size - 11 + i % 3, b2 = Math.floor(i / 3);
+        setf(a, b2, bit); setf(b2, a, bit);
+      }
+    }
+    // placement en zigzag
+    var k = 0, up = true, x, y, c;
+    var pts = [];
+    for (x = size - 1; x >= 1; x -= 2) {
+      if (x === 6) x = 5;
+      for (j = 0; j < size; j++) {
+        y = up ? size - 1 - j : j;
+        for (c = 0; c < 2; c++) {
+          var xx = x - c;
+          if (!fn[y][xx]) pts.push([xx, y]);
+        }
+      }
+      up = !up;
+    }
+    var base = m.map(function (r) { return r.slice(); });
+    pts.forEach(function (pt, idx) {
+      var bit = idx < all.length * 8 ? (all[idx >> 3] >>> (7 - (idx & 7))) & 1 : 0;
+      base[pt[1]][pt[0]] = bit;
+    });
+    function maskFn(mk, x, y) {
+      switch (mk) {
+        case 0: return (x + y) % 2 === 0; case 1: return y % 2 === 0; case 2: return x % 3 === 0;
+        case 3: return (x + y) % 3 === 0; case 4: return (Math.floor(x / 3) + Math.floor(y / 2)) % 2 === 0;
+        case 5: return x * y % 2 + x * y % 3 === 0; case 6: return (x * y % 2 + x * y % 3) % 2 === 0;
+        default: return ((x + y) % 2 + x * y % 3) % 2 === 0;
+      }
+    }
+    function withMask(mk) {
+      var g = base.map(function (r) { return r.slice(); });
+      pts.forEach(function (pt) { if (maskFn(mk, pt[0], pt[1])) g[pt[1]][pt[0]] ^= 1; });
+      var data2 = mk; // niveau M : bits 00
+      var rem2 = data2; for (var q = 0; q < 10; q++) rem2 = (rem2 << 1) ^ ((rem2 >>> 9) * 0x537);
+      var fbits = ((data2 << 10) | rem2) ^ 0x5412;
+      function gb(n) { return (fbits >>> n) & 1; }
+      for (var t = 0; t <= 5; t++) g[t][8] = gb(t);
+      g[7][8] = gb(6); g[8][8] = gb(7); g[8][7] = gb(8);
+      for (t = 9; t < 15; t++) g[8][14 - t] = gb(t);
+      for (t = 0; t < 8; t++) g[8][size - 1 - t] = gb(t);
+      for (t = 8; t < 15; t++) g[size - 15 + t][8] = gb(t);
+      g[size - 8][8] = 1;
+      return g;
+    }
+    function penalty(g) {
+      var p = 0, r, c2, run, dark = 0;
+      function line(get) {
+        for (var a = 0; a < size; a++) {
+          run = 1;
+          for (var b = 1; b < size; b++) {
+            if (get(a, b) === get(a, b - 1)) { run++; if (run === 5) p += 3; else if (run > 5) p++; } else run = 1;
+          }
+          for (b = 0; b + 11 <= size; b++) {
+            var s = '';
+            for (var t = 0; t < 11; t++) s += get(a, b + t);
+            if (s === '10111010000' || s === '00001011101') p += 40;
+          }
+        }
+      }
+      line(function (a, b) { return g[a][b]; });
+      line(function (a, b) { return g[b][a]; });
+      for (r = 0; r < size - 1; r++) for (c2 = 0; c2 < size - 1; c2++) {
+        var s2 = g[r][c2]; if (s2 === g[r][c2 + 1] && s2 === g[r + 1][c2] && s2 === g[r + 1][c2 + 1]) p += 3;
+      }
+      for (r = 0; r < size; r++) for (c2 = 0; c2 < size; c2++) dark += g[r][c2];
+      p += Math.floor(Math.abs(dark * 20 - size * size * 10) / (size * size)) * 10;
+      return p;
+    }
+    var best = null, bestP = Infinity;
+    for (var mk = 0; mk < 8; mk++) { var g = withMask(mk), pe = penalty(g); if (pe < bestP) { bestP = pe; best = g; } }
+    return best;
+  }
+  function utf8(str) {
+    var out = [];
+    for (var i = 0; i < str.length; i++) {
+      var c = str.charCodeAt(i);
+      if (c < 128) out.push(c);
+      else if (c < 2048) out.push(192 | c >> 6, 128 | c & 63);
+      else out.push(224 | c >> 12, 128 | c >> 6 & 63, 128 | c & 63);
+    }
+    return out;
+  }
+  return {
+    maxBytes: capacity(MAXV),
+    matrix: function (text) { return build(utf8(text)); },
+    svg: function (text, px) {
+      var m = build(utf8(text)); if (!m) return '';
+      var n = m.length, q = 4, d = '';
+      for (var y = 0; y < n; y++) for (var x = 0; x < n; x++) if (m[y][x]) d += 'M' + (x + q) + ' ' + (y + q) + 'h1v1h-1z';
+      var t = n + q * 2;
+      return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + t + ' ' + t + '" width="' + px + '" height="' + px + '" shape-rendering="crispEdges" role="img" aria-label="QR code">' +
+        '<rect width="' + t + '" height="' + t + '" fill="#fff"/><path d="' + d + '" fill="#000"/></svg>';
+    }
+  };
+})();
+
+// ---------- Transfert vers un autre appareil par QR code ----------
+// Les données sont compressées, découpées en parties ; chaque QR code contient un lien du site avec une partie.
+// L'appareil qui scanne n'a besoin d'aucune application : l'appareil photo ouvre le lien, le site assemble les parties.
+var SYNC_SKIP = { ku_iv_draft: 1, ku_fl_draft: 1, ku_tab: 1, ku_ivp: 1, ku_calc: 1, ku_period: 1 };
+var SYNC_CHUNK = 350;
+var sync = { urls: [], i: 0 };
+
+function b64u(bytes) {
+  var s = '';
+  for (var i = 0; i < bytes.length; i += 4096) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 4096));
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function unb64u(str) {
+  var t = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (t.length % 4) t += '=';
+  var bin = atob(t), out = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function streamBytes(bytes, stream) {
+  return new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer().then(function (b) { return new Uint8Array(b); });
+}
+function syncPack() {
+  var data = {};
+  bkKeys().forEach(function (k) {
+    if (SYNC_SKIP[k]) return;
+    try { data[k] = localStorage.getItem(k); } catch (e) {}
+  });
+  var json = JSON.stringify({ app: 'KamasUltra', version: 1, date: new Date().toISOString(), data: data });
+  var bytes = new TextEncoder().encode(json);
+  if (typeof CompressionStream === 'undefined') return Promise.resolve('r' + b64u(bytes));
+  return streamBytes(bytes, new CompressionStream('deflate-raw')).then(function (z) { return 'z' + b64u(z); });
+}
+function syncUnpack(str) {
+  var flag = str.charAt(0), bytes = unb64u(str.slice(1));
+  var p = flag === 'z'
+    ? (typeof DecompressionStream === 'undefined' ? Promise.reject(new Error('navigateur trop ancien')) : streamBytes(bytes, new DecompressionStream('deflate-raw')))
+    : Promise.resolve(bytes);
+  return p.then(function (b) {
+    if (b.length > 4000000) throw new Error('données trop volumineuses');
+    return JSON.parse(new TextDecoder().decode(b));
+  });
+}
+function syncBase() { return window.location.href.split('#')[0]; }
+function syncMake() {
+  return syncPack().then(function (str) {
+    var id = Math.random().toString(36).slice(2, 8), parts = [];
+    for (var i = 0; i < str.length; i += SYNC_CHUNK) parts.push(str.slice(i, i + SYNC_CHUNK));
+    var n = parts.length;
+    return {
+      id: id, whole: syncBase() + '#sync=' + id + '.1.1.' + str,
+      urls: parts.map(function (c, k) { return syncBase() + '#sync=' + id + '.' + (k + 1) + '.' + n + '.' + c; })
+    };
+  });
+}
+var syncEl = {
+  gen: document.getElementById('syncGen'), box: document.getElementById('syncBox'), qr: document.getElementById('syncQr'),
+  pos: document.getElementById('syncPos'), prev: document.getElementById('syncPrev'), next: document.getElementById('syncNext'),
+  copy: document.getElementById('syncCopy'), msg: document.getElementById('syncMsg')
+};
+function syncShow() {
+  var n = sync.urls.length;
+  syncEl.qr.innerHTML = QR.svg(sync.urls[sync.i], 300);
+  syncEl.pos.textContent = 'QR code ' + (sync.i + 1) + ' sur ' + n;
+  syncEl.prev.disabled = sync.i === 0;
+  syncEl.next.disabled = sync.i === n - 1;
+  syncEl.prev.style.visibility = syncEl.next.style.visibility = n > 1 ? 'visible' : 'hidden';
+}
+syncEl.gen.addEventListener('click', function () {
+  setMsg(syncEl.msg, 'Préparation…');
+  syncMake().then(function (r) {
+    sync.urls = r.urls; sync.whole = r.whole; sync.i = 0;
+    if (!r.urls.length || r.urls.some(function (u) { return !QR.matrix(u); })) throw new Error('génération impossible');
+    syncEl.box.hidden = false;
+    syncShow();
+    var n = r.urls.length;
+    setMsg(syncEl.msg, n > 1 ? n + ' QR codes à scanner dans l\'ordre (utilise les flèches pour passer au suivant).' : 'Un seul QR code à scanner.', 'ok');
+  }).catch(function (e) { setMsg(syncEl.msg, 'Impossible de préparer le transfert (' + (e && e.message || 'erreur') + '). Utilise la sauvegarde par fichier.', 'err'); });
+});
+syncEl.prev.addEventListener('click', function () { if (sync.i > 0) { sync.i--; syncShow(); } });
+syncEl.next.addEventListener('click', function () { if (sync.i < sync.urls.length - 1) { sync.i++; syncShow(); } });
+syncEl.copy.addEventListener('click', function () {
+  var ok = function () { setMsg(syncEl.msg, 'Lien copié : envoie-le-toi (messagerie, e-mail) et ouvre-le sur l\'autre appareil.', 'ok'); };
+  var ko = function () { setMsg(syncEl.msg, 'Copie impossible depuis ce navigateur.', 'err'); };
+  if (navigator.clipboard && navigator.clipboard.writeText && sync.whole) navigator.clipboard.writeText(sync.whole).then(ok, ko); else ko();
+});
+
+// Réception : le lien scanné contient une partie ; quand toutes sont là, on propose d'importer
+function syncReceive() {
+  var m = /^#sync=([a-z0-9]{1,12})\.(\d{1,3})\.(\d{1,3})\.([A-Za-z0-9_-]+)$/.exec(window.location.hash || '');
+  if (!m) return;
+  try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
+  var id = m[1], i = +m[2], n = +m[3], chunk = m[4];
+  if (!(i >= 1 && i <= n && n <= 200)) return;
+  showTab('sauvegarde');
+  var st = null;
+  try { st = JSON.parse(localStorage.getItem('kc_sync') || 'null'); } catch (e) {}
+  if (!st || st.id !== id || st.n !== n || Date.now() - st.t > 3600000) st = { id: id, n: n, t: Date.now(), parts: {} };
+  st.parts[i] = chunk;
+  var have = Object.keys(st.parts).length;
+  try { localStorage.setItem('kc_sync', JSON.stringify(st)); } catch (e) {}
+  if (have < n) {
+    var missing = [];
+    for (var k = 1; k <= n; k++) if (!st.parts[k]) missing.push(k);
+    setMsg(syncEl.msg, 'Partie ' + i + ' reçue (' + have + ' sur ' + n + '). Il reste à scanner : QR ' + missing.join(', ') + '.', 'ok');
+    return;
+  }
+  var all = '';
+  for (var j = 1; j <= n; j++) all += st.parts[j];
+  try { localStorage.removeItem('kc_sync'); } catch (e) {}
+  setMsg(syncEl.msg, 'Toutes les parties sont reçues, vérification…');
+  syncUnpack(all).then(function (payload) {
+    if (!payload || payload.app !== 'KamasUltra' || !payload.data || typeof payload.data !== 'object') throw new Error('contenu invalide');
+    bkRestore(payload, syncEl.msg);
+  }).catch(function (e) { setMsg(syncEl.msg, 'Transfert impossible (' + (e && e.message || 'erreur') + '). Recommence depuis l\'autre appareil.', 'err'); });
+}
 
 // ---------- Sauvegarde : export / import de toutes les données du site ----------
 var BK_PREFIX = 'ku_';
@@ -1996,6 +2306,42 @@ function cleanDraft(raw) {
   return JSON.stringify(d);
 }
 
+// Applique une sauvegarde (fichier ou transfert par QR) après vérification et confirmation
+function bkRestore(payload, msgNode) {
+  var out = msgNode || bkEl.msg;
+  var clean = {};
+  Object.keys(payload.data).forEach(function (k) {
+    var v = payload.data[k];
+    if (k.indexOf(BK_PREFIX) !== 0 || typeof v !== 'string') return;
+    if (k === 'ku_invest' || k === 'ku_flips' || k === 'ku_atelier') clean[k] = cleanList(v);
+    else if (k === 'ku_iv_draft' || k === 'ku_fl_draft') { var c = cleanDraft(v); if (c) clean[k] = c; }
+    else clean[k] = v;
+  });
+  var nb = 0;
+  ['ku_invest', 'ku_flips'].forEach(function (k) {
+    try { nb += JSON.parse(clean[k] || '[]').length; } catch (e) {}
+  });
+  var when = payload.date ? new Date(payload.date) : null;
+  var whenTxt = when && !isNaN(when) ? ' du ' + when.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+  if (!window.confirm('Restaurer la sauvegarde' + whenTxt + ' (' + plural(nb, 'objet', 'objets') + ') ?\n\nAttention : les données actuellement présentes sur cet appareil seront remplacées.')) {
+    setMsg(out, 'Restauration annulée. Rien n\'a été modifié.');
+    return;
+  }
+  try {
+    bkKeys().forEach(function (k) { localStorage.removeItem(k); });
+    Object.keys(clean).forEach(function (k) { localStorage.setItem(k, clean[k]); });
+    localStorage.setItem('ku_tab', 'sauvegarde');
+  } catch (e) {
+    setMsg(out, 'Impossible d\'écrire les données dans ce navigateur (navigation privée ?).', 'err');
+    return;
+  }
+  setMsg(out, 'Sauvegarde restaurée, rechargement…', 'ok');
+  // Avec le serveur local, on attend que le fichier sur le disque soit à jour avant de recharger
+  var recharger = function () { window.location.reload(); };
+  var fin = window.kuStockage ? window.kuStockage.flush() : Promise.resolve();
+  fin.then(function () { setTimeout(recharger, 400); }, recharger);
+}
+
 function bkImport(file) {
   if (!file) return;
   var reader = new FileReader();
@@ -2007,37 +2353,7 @@ function bkImport(file) {
       setMsg(bkEl.msg, 'Ce fichier n\'est pas une sauvegarde KamasUltra.', 'err');
       return;
     }
-    var clean = {};
-    Object.keys(payload.data).forEach(function (k) {
-      var v = payload.data[k];
-      if (k.indexOf(BK_PREFIX) !== 0 || typeof v !== 'string') return;
-      if (k === 'ku_invest' || k === 'ku_flips' || k === 'ku_atelier') clean[k] = cleanList(v);
-      else if (k === 'ku_iv_draft' || k === 'ku_fl_draft') { var c = cleanDraft(v); if (c) clean[k] = c; }
-      else clean[k] = v;
-    });
-    var nb = 0;
-    ['ku_invest', 'ku_flips'].forEach(function (k) {
-      try { nb += JSON.parse(clean[k] || '[]').length; } catch (e) {}
-    });
-    var when = payload.date ? new Date(payload.date) : null;
-    var whenTxt = when && !isNaN(when) ? ' du ' + when.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
-    if (!window.confirm('Restaurer la sauvegarde' + whenTxt + ' (' + plural(nb, 'objet', 'objets') + ') ?\n\nAttention : les données actuellement présentes sur cet appareil seront remplacées.')) {
-      setMsg(bkEl.msg, 'Restauration annulée. Rien n\'a été modifié.');
-      return;
-    }
-    try {
-      bkKeys().forEach(function (k) { localStorage.removeItem(k); });
-      Object.keys(clean).forEach(function (k) { localStorage.setItem(k, clean[k]); });
-      localStorage.setItem('ku_tab', 'sauvegarde');
-    } catch (e) {
-      setMsg(bkEl.msg, 'Impossible d\'écrire les données dans ce navigateur (navigation privée ?).', 'err');
-      return;
-    }
-    setMsg(bkEl.msg, 'Sauvegarde restaurée, rechargement…', 'ok');
-    // Avec le serveur local, on attend que le fichier sur le disque soit à jour avant de recharger
-    var recharger = function () { window.location.reload(); };
-    var fin = window.kuStockage ? window.kuStockage.flush() : Promise.resolve();
-    fin.then(function () { setTimeout(recharger, 400); }, recharger);
+    bkRestore(payload);
   };
   reader.readAsText(file);
 }
@@ -2071,3 +2387,5 @@ kuReady = true;
 refreshViews();
 almLoad(false);
 rsLoadFile();
+syncReceive();
+window.addEventListener('hashchange', syncReceive); // lien scanné pendant que le site est déjà ouvert

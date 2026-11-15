@@ -37,7 +37,7 @@
         <button data-sub="calc-parchemins" data-parent="calculateurs">Parchemins</button>
       </div>
     </div>
-    <button data-tab="sauvegarde">Sauvegarde 💾</button>
+    <button data-tab="sauvegarde">Synchronisation et Sauvegarde 💾</button>
   </nav>
   <span id="curTab"></span>
 </header>
@@ -476,7 +476,7 @@
   </section>
 
   <section id="sauvegarde">
-    <h2>Sauvegarde 💾</h2>
+    <h2>Synchronisation et sauvegarde 💾</h2>
 
     <div class="iv-sec">
       <div class="section-title">Où sont tes données ?</div>
@@ -488,8 +488,8 @@
           ne l'efface pas.
         </p>
         <p class="expl" style="margin-bottom:0">
-          Une copie par jour est gardée dans <b>donnees/historique/</b> (les 30 derniers jours). La sauvegarde
-          ci-dessous reste utile pour emporter tes données ailleurs.
+          Une copie par jour est gardée dans <b>donnees/historique/</b> (les 30 derniers jours). Le transfert et la
+          sauvegarde ci-dessous restent utiles pour emporter tes données ailleurs.
         </p>
       </div>
       <div class="si-navigateur">
@@ -502,36 +502,45 @@
           un autre navigateur, tout ce que tu as enregistré <b>n'apparaît plus</b>.
         </p>
         <p class="expl" style="margin-bottom:0">
-          La sauvegarde met toutes tes données dans <b>un petit fichier</b> que tu télécharges et gardes de côté.
-          Tu peux ensuite les récupérer quand tu veux, ici ou sur un autre appareil.
+          Transfère-les vers un autre appareil par QR code, ou garde <b>un fichier de sauvegarde</b> que tu
+          pourras recharger quand tu veux, ici ou ailleurs.
         </p>
       </div>
+      <div class="bk-sum" style="margin:14px 0 0" id="bkSummary"></div>
     </div>
 
     <div class="iv-sec">
-      <div class="section-title">1. Faire une sauvegarde</div>
-      <p class="expl">Clique sur le bouton : un fichier se télécharge sur ton appareil. Garde-le dans un endroit sûr
-        (ou envoie-le-toi par mail ou par messagerie).</p>
-      <div class="bk-sum" id="bkSummary"></div>
-      <button class="btn bk-btn" id="bkExport">⬇️ Télécharger ma sauvegarde</button>
+      <div class="section-title">📱 Transférer vers un autre appareil</div>
+      <p class="expl">Génère le QR code, puis scanne-le avec l'appareil photo de l'autre appareil : il ouvre le site et propose d'importer tes données.
+        S'il y a plusieurs QR codes, scanne-les à la suite.</p>
+      <p class="expl si-disque">Le QR code ouvre l'adresse de cette page. Avec le serveur local, un appareil du même réseau
+        voit déjà les mêmes données en ouvrant l'adresse « depuis le réseau local » : le transfert ne sert que pour
+        copier tes données vers une autre installation, et il ne fonctionne pas si cette page est ouverte en 127.0.0.1.</p>
+      <button class="btn bk-btn" id="syncGen">📷 Générer le QR code</button>
+      <div id="syncBox" hidden>
+        <div class="sync-qr" id="syncQr"></div>
+        <div class="sync-nav">
+          <button class="btn-s alt" id="syncPrev" aria-label="QR précédent">‹</button>
+          <span id="syncPos"></span>
+          <button class="btn-s alt" id="syncNext" aria-label="QR suivant">›</button>
+        </div>
+        <button class="btn-s alt" id="syncCopy" style="margin-top:12px">🔗 Copier un lien à envoyer</button>
+      </div>
+      <p class="expl warn" style="margin:12px 0 0">⚠️ Les données de l'appareil qui reçoit sont remplacées.</p>
+      <div class="msg" id="syncMsg" style="margin:8px 0 0"></div>
     </div>
 
     <div class="iv-sec">
-      <div class="section-title">2. Récupérer une sauvegarde</div>
-      <p class="expl">Choisis le fichier de sauvegarde que tu as téléchargé. Tes données reviennent à l'identique.</p>
-      <p class="expl warn">⚠️ Ce que tu as actuellement sur cet appareil sera remplacé par le contenu du fichier.</p>
+      <div class="section-title">💾 Sauvegarde par fichier</div>
+      <p class="expl">Télécharge un fichier avec toutes tes données et garde-le de côté (ou envoie-le-toi). Tu pourras le recharger ici ou sur un autre appareil.
+        Il ne contient que les données de ce site : garde-le pour toi si tu ne veux pas partager tes prix.</p>
       <input type="file" id="bkFile" accept=".json,application/json" hidden>
-      <button class="btn bk-btn" id="bkImportBtn" onclick="document.getElementById('bkFile').click()">⬆️ Choisir un fichier de sauvegarde</button>
-      <div class="msg" id="bkMsg" style="margin:12px 0 0"></div>
-    </div>
-
-    <div class="iv-sec">
-      <div class="section-title">Bon à savoir</div>
-      <ul class="expl-list">
-        <li>Fais une sauvegarde de temps en temps, par exemple après une grosse session de ventes.</li>
-        <li><b>Changer d'appareil :</b> sauvegarde sur l'ancien, envoie-toi le fichier, puis récupère-le sur le nouveau.</li>
-        <li>Le fichier ne contient que tes données de ce site, rien de personnel. Garde-le pour toi si tu ne veux pas partager tes prix.</li>
-      </ul>
+      <div class="actions" style="margin-top:0">
+        <button class="btn-s" id="bkExport">⬇️ Télécharger ma sauvegarde</button>
+        <button class="btn-s alt" id="bkImportBtn" onclick="document.getElementById('bkFile').click()">⬆️ Restaurer un fichier</button>
+      </div>
+      <p class="expl warn" style="margin:10px 0 0">⚠️ Une restauration remplace les données de cet appareil.</p>
+      <div class="msg" id="bkMsg" style="margin:8px 0 0"></div>
     </div>
   </section>
 
