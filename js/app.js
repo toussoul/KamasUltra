@@ -699,10 +699,29 @@ function plain(s) {
   return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/’/g, '\'');
 }
 var SUGG_MAX = 15;
-function fetchItems(term) {
+// Craft : seulement les items qui ont une recette (l'id d'une recette est celui de l'objet fabriqué).
+// Si DofusDB ne répond pas à cette vérification, rien n'est masqué.
+function craftableSet(ids) {
+  function q(field) {
+    var url = API + '/recipes?$limit=50&$select[]=id&$select[]=resultId&' +
+      ids.map(function (id) { return field + '[$in][]=' + encodeURIComponent(id); }).join('&');
+    return getJson(url).then(function (r) {
+      var rows = r && r.data ? r.data : (Array.isArray(r) ? r : []);
+      var set = {};
+      rows.forEach(function (x) { if (x && x.resultId != null) set[x.resultId] = 1; if (x && x.id != null) set[x.id] = 1; });
+      return set;
+    });
+  }
+  return q('resultId').then(function (set) {
+    return Object.keys(set).length ? set : q('id');
+  }).catch(function () { return null; });
+}
+// Renvoie { list, hidden } : hidden = résultats écartés parce qu'ils n'ont pas de recette (opts.recipe)
+function fetchItems(term, opts) {
+  opts = opts || {};
   // Chaque mot tapé doit apparaître, dans n'importe quel ordre ; les élisions (l', d') sont ignorées
   var words = plain(term).split(/[^a-z0-9]+/).filter(function (w) { return w.length > 1 || /\d/.test(w); });
-  if (!words.length) return Promise.resolve([]);
+  if (!words.length) return Promise.resolve({ list: [], hidden: 0 });
   var all = '^' + words.map(function (w) { return '(?=.*' + w + ')'; }).join('');
   var rx = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   var base = API + '/items?lang=fr&$limit=50&$select[]=id&$select[]=name&$select[]=slug&$select[]=level&$select[]=iconId';
@@ -721,20 +740,25 @@ function fetchItems(term) {
     return 3;
   }
   function attempt(k) {
-    if (k >= tries.length) return Promise.resolve([]);
+    if (k >= tries.length) return Promise.resolve({ list: [], hidden: 0 });
     return getJson(tries[k]).then(function (r) {
       var list = (r && r.data ? r.data : (Array.isArray(r) ? r : []))
         .map(function (o) { return { id: o.id, name: nameOf(o), level: o.level, icon: o.iconId }; })
         .filter(function (o) { return o.id && o.name; });
       list.forEach(function (o) { o.r = rank(o); });
       list.sort(function (a, b) { return a.r - b.r || a.name.length - b.name.length || a.name.localeCompare(b.name, 'fr'); });
-      return list.length ? list.slice(0, SUGG_MAX) : attempt(k + 1);
+      if (!list.length) return attempt(k + 1);
+      if (!opts.recipe) return { list: list.slice(0, SUGG_MAX), hidden: 0 };
+      return craftableSet(list.map(function (o) { return o.id; })).then(function (set) {
+        var kept = set ? list.filter(function (o) { return set[o.id]; }) : list;
+        return { list: kept.slice(0, SUGG_MAX), hidden: list.length - kept.length };
+      });
     }).catch(function () { return attempt(k + 1); });
   }
   return attempt(0);
 }
 
-function makeSearch(input, box, onPick) {
+function makeSearch(input, box, onPick, getOpts) {
   var items = [], sel = -1, timer = null, seq = 0;
   var wrap = input.closest('.sugg-wrap');
 
@@ -760,9 +784,10 @@ function makeSearch(input, box, onPick) {
   function search(term) {
     var my = ++seq;
     info('Recherche…');
-    fetchItems(term).then(function (list) {
+    fetchItems(term, getOpts ? getOpts() : null).then(function (res) {
       if (my !== seq) return;
-      if (!list.length) { info('Aucun résultat'); return; }
+      var list = res.list;
+      if (!list.length) { info(res.hidden ? 'Aucun item craftable trouvé pour cette recherche' : 'Aucun résultat'); return; }
       items = list;
       sel = -1;
       render();
@@ -800,7 +825,8 @@ function makeSearch(input, box, onPick) {
 }
 
 // Craft : le choix d'un item importe sa recette
-makeSearch(ivEl.name, document.getElementById('ivSuggest'), function (it) { ivImportId(it.id); });
+makeSearch(ivEl.name, document.getElementById('ivSuggest'), function (it) { ivImportId(it.id); },
+  function () { return { recipe: true }; });
 
 // ---------- Investissements : achat-revente ----------
 var fl = { icon: null, editing: null };
