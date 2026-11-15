@@ -923,6 +923,21 @@ flEl.clear.addEventListener('click', function () {
   flApply({});
   setMsg(flEl.saveMsg, '');
 });
+// ---------- Boutons de navigation entre pages : data-go="onglet[:page[:ancre]]" ----------
+document.addEventListener('click', function (e) {
+  var b = e.target.closest ? e.target.closest('[data-go]') : null;
+  if (!b) return;
+  var parts = b.dataset.go.split(':'), tab = parts[0], pane = parts[1], anchor = parts[2];
+  showTab(tab);
+  if (pane) {
+    if (pane.indexOf('at-') === 0) showAtPane(pane);
+    else if (pane.indexOf('iv-') === 0) showIvPane(pane);
+    else showCalc(pane);
+  }
+  var target = anchor ? document.getElementById(anchor) : null;
+  if (target && target.offsetParent) target.scrollIntoView({ behavior: 'smooth', block: 'start' }); else window.scrollTo(0, 0);
+});
+
 // ---------- Sous-pages de l'Atelier (Liste de courses / Forgemagie) ----------
 function showAtPane(id) {
   document.querySelectorAll('.atpane').forEach(function (p) { p.classList.toggle('active', p.id === id); });
@@ -1064,9 +1079,9 @@ function entryPrice(e) {
   if (it.price != null && isFinite(it.price)) return +it.price;
   return nv(e.kind === 'craft' ? it.prix : it.vente);
 }
-// Coût d'un craft = ressources (coût de base) + coût cumulé des sessions de forgemagie
+// Coût d'un craft = ressources (coût de base) + sessions de forgemagie + frais des mises en vente précédentes
 function entryCost(e) {
-  return entryBaseCost(e) + (e.kind === 'craft' ? (+e.it.fmCost || 0) : 0);
+  return entryBaseCost(e) + (e.kind === 'craft' ? (+e.it.fmCost || 0) + (+e.it.extra || 0) : 0);
 }
 function entryBaseCost(e) {
   var it = e.it;
@@ -1166,6 +1181,7 @@ function hdvItemHtml(e) {
     (n ? ' (' + n + ' actualisation' + (n > 1 ? 's' : '') + ')' : '') +
     '<br>Prix minimum pour une prochaine actualisation : <b>' + fmtInt(minPrice) + ' K</b></div>' +
     '<div class="hdv-btns"><button class="btn-s" data-act="sold">✓ Vendu</button>' +
+    (e.kind === 'craft' ? '<button class="btn-s alt" data-act="unlist">↩ Retirer de la vente</button>' : '') +
     (e.kind === 'flip' ? '<button class="btn-s alt" data-act="edit">Modifier le calcul</button>' : '') +
     '<button class="btn-s alt" data-act="rm">Supprimer</button></div></div>';
 }
@@ -1178,7 +1194,9 @@ function hdvInvHtml(e) {
   return '<div class="saved-item" data-k="' + e.kind + '" data-id="' + it.id + '"><div>' +
     '<div class="n">' + imgTag(it.icon, 'si') + '<span>' + esc(it.name) + '</span></div>' +
     '<div class="s">Coût de craft : ' + fmtInt(entryBaseCost(e)) + ' K' +
-    (it.fmLog && it.fmLog.length ? '<br>Forgemagie : <b class="neg">−' + fmtInt(+it.fmCost || 0) + ' K</b> (' + it.fmLog.length + ' session' + (it.fmLog.length > 1 ? 's' : '') + ') · coût total : <b>' + fmtInt(cost) + ' K</b>' : '') + '</div>' +
+    (it.fmLog && it.fmLog.length ? '<br>Forgemagie : <b class="neg">−' + fmtInt(+it.fmCost || 0) + ' K</b> (' + it.fmLog.length + ' session' + (it.fmLog.length > 1 ? 's' : '') + ')' : '') +
+    (+it.extra > 0 ? '<br>Frais des mises en vente précédentes : <b class="neg">−' + fmtInt(+it.extra) + ' K</b>' : '') +
+    ((it.fmLog && it.fmLog.length) || +it.extra > 0 ? '<br>Coût total : <b>' + fmtInt(cost) + ' K</b>' : '') + '</div>' +
     '<div class="hdv-lbl" style="margin-top:10px">Prix de vente</div>' +
     '<div class="input-wrap" style="max-width:240px"><input type="text" data-num inputmode="decimal" class="ip" placeholder="Prix en HDV" value="' + (price > 0 ? esc(fmtField(price)) : '') + '"><span class="unit">K</span></div>' +
     '<div class="s inv-prev" style="margin-top:6px">' + (price > 0 ? invPrevText(price, cost) : '') + '</div></div>' +
@@ -1334,6 +1352,16 @@ function hdvClick(e) {
       it.soldNet = entryNet(x);
     });
     refreshViews();
+  } else if (act === 'unlist') {
+    // retour en inventaire : les frais déjà payés deviennent un coût de l'objet, tout continue de s'additionner
+    var back = entry.it.name, fees = entryFees(entry);
+    updateEntry(kind, id, function (it) {
+      it.extra = (+it.extra || 0) + (+it.fees || 0);
+      delete it.fees; delete it.updates; delete it.listPrice;
+      it.inv = true;
+    });
+    refreshViews();
+    setMsg(document.getElementById('hdvMsg'), '« ' + back + ' » est retiré de la vente et revient dans l\'Inventaire' + (fees > 0 ? ' (frais déjà payés : ' + fmtInt(fees) + ' K, ajoutés à son coût)' : '') + '. Tu peux le forgemager puis le remettre en vente.', 'ok');
   } else if (act === 'fm') {
     fmSelect(id);
   } else if (act === 'list') {

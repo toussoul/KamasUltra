@@ -24,7 +24,6 @@
         <button data-sub="iv-flip" data-parent="investissements">Achat-revente</button>
       </div>
     </div>
-    <button data-tab="inventaire">Inventaire 📦</button>
     <div class="grp">
       <button data-tab="atelier">Atelier 🛠️ <span class="chev">▸</span></button>
       <div class="sub">
@@ -33,6 +32,7 @@
       </div>
     </div>
     <button data-tab="ressources">Prix des ressources 💰</button>
+    <button data-tab="inventaire">Inventaire 📦</button>
     <button data-tab="hdv">Hôtel de vente 🏷️</button>
     <div class="grp">
       <button data-tab="calculateurs">Calculateurs 🧮 <span class="chev">▸</span></button>
@@ -150,6 +150,12 @@
       <div class="msg" id="ivSaveMsg" style="margin-bottom:0"></div>
     </div>
 
+    <div class="navlinks" style="margin-top:4px">
+      <button class="btn-s alt" data-go="atelier:at-list">🛠️ Aller à l'atelier</button>
+      <button class="btn-s alt" data-go="atelier:at-list:atShopSec">🛒 Faire ses courses</button>
+      <button class="btn-s alt" data-go="atelier:at-fm">🪄 Forgemager</button>
+    </div>
+
     </div><!-- /iv-craft -->
 
     <div class="ivpane" id="iv-flip">
@@ -212,6 +218,10 @@
   <section id="inventaire">
     <h2>Inventaire 📦</h2>
     <p class="opt" style="margin-top:0">Tes crafts, pas encore en vente. Forgemage-les un par un, fixe le prix de vente (bénéfice estimé taxe de 2 % déduite), puis mets-les en vente.</p>
+    <div class="navlinks">
+      <button class="btn-s alt" data-go="atelier:at-list">🛠️ Voir mon atelier</button>
+      <button class="btn-s alt" data-go="atelier:at-fm">🪄 Forgemagie</button>
+    </div>
     <div class="msg" id="invMsg"></div>
     <div id="hdvInv"></div>
   </section>
@@ -220,6 +230,7 @@
     <h2>Atelier 🛠️</h2>
 
     <div class="atpane active" id="at-list">
+      <div class="navlinks"><button class="btn-s alt" data-go="inventaire">📦 Voir mon inventaire</button></div>
     <div class="iv-sec">
       <div class="section-title">Objets à fabriquer</div>
       <div id="atItems"></div>
@@ -240,6 +251,7 @@
     </div><!-- /at-list -->
 
     <div class="atpane" id="at-fm">
+      <div class="navlinks"><button class="btn-s alt" data-go="inventaire">📦 Voir mon inventaire</button></div>
       <div class="iv-sec">
         <div class="section-title">🪄 Forgemagie</div>
         <label class="field">
@@ -481,7 +493,9 @@
 
   <section id="hdv">
     <h2>Hôtel de vente 🏷️</h2>
+    <div class="navlinks"><button class="btn-s alt" data-go="inventaire">📦 Voir mon inventaire</button></div>
     <p class="opt" style="margin-top:0" id="hdvInfo"></p>
+    <div class="msg" id="hdvMsg" style="margin:0 0 12px"></div>
     <div id="hdvList"></div>
     <details id="hdvSoldBox" style="margin-top:22px">
       <summary id="hdvSoldSum">Vendus</summary>

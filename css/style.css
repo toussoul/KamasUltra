@@ -172,6 +172,7 @@
   .saved-item .n { font-weight: 600; }
   .saved-item .s { font-size: 13px; color: var(--muted); }
   .saved-item .b { display: flex; gap: 8px; }
+  .navlinks { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; }
   .atpane { display: none; }
   .atpane.active { display: block; }
   .ivpane { display: none; }
