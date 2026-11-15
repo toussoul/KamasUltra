@@ -172,6 +172,8 @@
   .saved-item .n { font-weight: 600; }
   .saved-item .s { font-size: 13px; color: var(--muted); }
   .saved-item .b { display: flex; gap: 8px; }
+  .atpane { display: none; }
+  .atpane.active { display: block; }
   .ivpane { display: none; }
   .ivpane.active { display: block; }
   .iv-sec {
@@ -257,6 +259,8 @@
   .btn-s.alt { background: var(--field); }
   .at-add { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-top: 14px; }
   .at-add .field { flex: 0 0 150px; }
+  .at-item { flex-wrap: wrap; }
+  .at-act { flex-basis: 100%; display: flex; gap: 8px; flex-wrap: wrap; }
   .at-item, .at-row { display: flex; align-items: center; gap: 10px; background: #232323; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
   .at-item img, .at-row img { width: 36px; height: 36px; object-fit: contain; flex: none; }
   .at-name { flex: 1; min-width: 0; font-weight: 600; word-break: break-word; }

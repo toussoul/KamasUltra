@@ -25,7 +25,13 @@
       </div>
     </div>
     <button data-tab="inventaire">Inventaire 📦</button>
-    <button data-tab="atelier">Atelier 🛠️</button>
+    <div class="grp">
+      <button data-tab="atelier">Atelier 🛠️ <span class="chev">▸</span></button>
+      <div class="sub">
+        <button data-sub="at-list" data-parent="atelier">Liste de courses</button>
+        <button data-sub="at-fm" data-parent="atelier">Forgemagie</button>
+      </div>
+    </div>
     <button data-tab="ressources">Prix des ressources 💰</button>
     <button data-tab="hdv">Hôtel de vente 🏷️</button>
     <div class="grp">
@@ -120,62 +126,27 @@
     </div>
 
     <div class="iv-sec">
-      <div class="section-title">🪄 Forgemagie (optionnel)</div>
-      <label class="field">
-        <span>Valeur estimée du stock de runes avant</span>
-        <div class="input-wrap">
-          <input id="ivAvant" type="text" data-num inputmode="decimal" step="any">
-          <span class="unit">K</span>
-        </div>
-      </label>
-      <label class="field" style="margin-bottom:0">
-        <span>Valeur estimée du stock de runes après</span>
-        <div class="input-wrap">
-          <input id="ivApres" type="text" data-num inputmode="decimal" step="any">
-          <span class="unit">K</span>
-        </div>
-      </label>
-    </div>
-
-    <div class="iv-sec">
-      <div class="section-title">Vente</div>
-      <label class="field" style="margin-bottom:0">
-        <span>Prix de vente</span>
-        <div class="input-wrap">
-          <input id="ivPrix" type="text" data-num inputmode="decimal" min="0" step="any">
-          <span class="unit">K</span>
-        </div>
-      </label>
-    </div>
-
-    <div class="iv-sec">
       <div class="section-title">Résultat</div>
       <div class="result">
         <div class="card"><div class="k">Coût de craft</div><div class="v" id="ivNet">–</div></div>
-        <div class="card"><div class="k">Seuil de rentabilité</div><div class="v" id="ivSeuil">–</div></div>
       </div>
-      <p class="opt" style="margin:10px 0 0">
-        Le seuil de rentabilité est le prix de vente minimum (après taxe de 2 %) pour ne pas perdre d'argent avec les prix saisis.
-      </p>
+      <p class="opt" style="margin:10px 0 0">Somme des ressources, au prix saisi pour un exemplaire.</p>
 
       <div class="at-add" style="margin-top:18px">
         <label class="field" style="margin:0">
-          <span>Quantité craftée</span>
+          <span>Quantité</span>
           <div class="input-wrap"><input id="ivQty" type="text" inputmode="numeric" value="1" style="min-width:60px"></div>
         </label>
-        <p class="opt" style="margin:0;flex:1;min-width:180px">Chaque exemplaire est enregistré séparément dans l'inventaire : tu pourras ensuite modifier le prix ou la forgemagie de chacun.</p>
       </div>
       <div class="actions">
-        <button class="btn-s" id="ivSave">📦 Enregistrer dans l'inventaire</button>
-        <button class="btn-s" id="ivClear">🗑 Vider le formulaire</button>
+        <button class="btn-s" id="ivQuick">⚡ Craft rapide</button>
+        <button class="btn-s" id="ivAtAdd">🛠️ Ajouter à l'Atelier</button>
+        <button class="btn-s alt" id="ivClear">🗑 Vider le formulaire</button>
       </div>
-      <div class="at-add">
-        <label class="field" style="margin:0">
-          <span>Quantité pour l'Atelier</span>
-          <div class="input-wrap"><input id="ivAtQty" type="text" inputmode="numeric" value="1" style="min-width:60px"></div>
-        </label>
-        <button class="btn-s alt" id="ivAtAdd">🛠️ Ajouter à l'Atelier</button>
-      </div>
+      <p class="opt" style="margin:10px 0 0">
+        <b>Craft rapide</b> : les objets vont directement dans l'Inventaire, un par exemplaire, avec leur coût de craft (tu fixeras le prix de vente là-bas).
+        <b>Ajouter à l'Atelier</b> : prépare la liste de courses et marque les crafts au fur et à mesure.
+      </p>
       <div class="msg" id="ivSaveMsg" style="margin-bottom:0"></div>
     </div>
 
@@ -240,16 +211,19 @@
 
   <section id="inventaire">
     <h2>Inventaire 📦</h2>
-    <p class="opt" style="margin-top:0">Tes crafts enregistrés, pas encore en vente. Mets-les en vente quand tu les as posés en jeu.</p>
+    <p class="opt" style="margin-top:0">Tes crafts, pas encore en vente. Forgemage-les un par un, fixe le prix de vente (bénéfice estimé taxe de 2 % déduite), puis mets-les en vente.</p>
     <div class="msg" id="invMsg"></div>
     <div id="hdvInv"></div>
   </section>
 
   <section id="atelier">
     <h2>Atelier 🛠️</h2>
+
+    <div class="atpane active" id="at-list">
     <div class="iv-sec">
       <div class="section-title">Objets à fabriquer</div>
       <div id="atItems"></div>
+      <div class="msg" id="atItemMsg" style="margin:8px 0 0"></div>
       <p class="opt" style="margin:10px 0 0">Ajoute des objets depuis Investissements → Craft (bouton « Ajouter à l'Atelier »).</p>
     </div>
     <div class="iv-sec" id="atShopSec">
@@ -263,6 +237,46 @@
       </div>
       <div class="msg" id="atMsg" style="margin-bottom:0"></div>
     </div>
+    </div><!-- /at-list -->
+
+    <div class="atpane" id="at-fm">
+      <div class="iv-sec">
+        <div class="section-title">🪄 Forgemagie</div>
+        <label class="field">
+          <span>Objet de l'inventaire</span>
+          <select id="fmItem" style="width:100%"></select>
+        </label>
+        <p class="opt" id="fmHint" style="margin:-4px 0 16px"></p>
+        <label class="field">
+          <span>Valeur estimée du stock de runes avant la session</span>
+          <div class="input-wrap">
+            <input id="fmAvant" type="text" data-num inputmode="decimal">
+            <span class="unit">K</span>
+          </div>
+        </label>
+        <label class="field" style="margin-bottom:0">
+          <span>Valeur estimée du stock de runes après la session</span>
+          <div class="input-wrap">
+            <input id="fmApres" type="text" data-num inputmode="decimal">
+            <span class="unit">K</span>
+          </div>
+        </label>
+      </div>
+      <div class="iv-sec">
+        <div class="section-title">Résultat</div>
+        <div class="result">
+          <div class="card"><div class="k">Coût de cette session</div><div class="v" id="fmGain">–</div></div>
+          <div class="card" id="fmSavedCard" style="display:none"><div class="k">Forgemagie déjà enregistrée</div><div class="v" id="fmSaved">–</div></div>
+          <div class="card" id="fmTotalCard" style="display:none"><div class="k">Coût total de l'objet</div><div class="v" id="fmTotal">–</div></div>
+        </div>
+        <div class="actions">
+          <button class="btn-s" id="fmSave">✓ Enregistrer la session</button>
+          <button class="btn-s alt" id="fmUndo" style="display:none">↩ Annuler la dernière session</button>
+          <button class="btn-s alt" id="fmBack" style="display:none">← Retour à l'inventaire</button>
+        </div>
+        <div class="msg" id="fmMsg" style="margin:8px 0 0"></div>
+      </div>
+    </div><!-- /at-fm -->
   </section>
 
   <section id="ressources">

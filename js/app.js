@@ -12,10 +12,9 @@ function navSync(name) {
   document.querySelectorAll('#nav .grp').forEach(function (g) {
     if (name) g.classList.toggle('open', g.querySelector('[data-tab]').dataset.tab === name);
   });
-  var ivp = document.querySelector('.ivpane.active'), cp = document.querySelector('.calc.active');
   document.querySelectorAll('#nav [data-sub]').forEach(function (b) {
-    var cur = document.querySelector('section.active');
-    var on = cur && cur.id === b.dataset.parent && ((ivp && ivp.id === b.dataset.sub) || (cp && cp.id === b.dataset.sub));
+    var cur = document.querySelector('section.active'), pane = document.getElementById(b.dataset.sub);
+    var on = cur && cur.id === b.dataset.parent && pane && pane.classList.contains('active');
     b.classList.toggle('active', !!on);
   });
   var cur = document.querySelector('#nav [data-tab].active'), sub = document.querySelector('#nav [data-sub].active');
@@ -45,7 +44,8 @@ buttons.forEach(function (b) {
 document.querySelectorAll('#nav [data-sub]').forEach(function (b) {
   b.addEventListener('click', function () {
     showTab(b.dataset.parent);
-    if (b.dataset.sub.indexOf('iv-') === 0) showIvPane(b.dataset.sub); else showCalc(b.dataset.sub);
+    var sid = b.dataset.sub;
+    if (sid.indexOf('iv-') === 0) showIvPane(sid); else if (sid.indexOf('at-') === 0) showAtPane(sid); else showCalc(sid);
     window.scrollTo(0, 0); // le menu reste ouvert et déplié : on peut enchaîner les pages
   });
 });
@@ -383,12 +383,10 @@ var iv = { rows: [], editing: null, icon: null };
 var ivEl = {
   head: document.getElementById('ivHead'),
   msg: document.getElementById('ivMsg'), saveMsg: document.getElementById('ivSaveMsg'),
-  name: document.getElementById('ivName'), prix: document.getElementById('ivPrix'),
+  name: document.getElementById('ivName'),
   tbody: document.getElementById('ivRows'),
-  avant: document.getElementById('ivAvant'), apres: document.getElementById('ivApres'),
   net: document.getElementById('ivNet'),
-  seuil: document.getElementById('ivSeuil'),
-  save: document.getElementById('ivSave'), clear: document.getElementById('ivClear')
+  clear: document.getElementById('ivClear')
 };
 
 function esc(s) {
@@ -512,36 +510,26 @@ function ivCalc() {
     subs.push(s);
     cout += s;
   });
-  var forgeUsed = ivEl.avant.value !== '' || ivEl.apres.value !== '';
-  var gain = forgeUsed ? nv(ivEl.apres.value) - nv(ivEl.avant.value) : 0;
-  var net = nv(ivEl.prix.value) * (1 - TAX) - cout + gain;
-  var seuil = cout > 0 ? Math.ceil(Math.max(cout - gain, 0) / (1 - TAX)) : null;
-  return { cout: cout, subs: subs, forgeUsed: forgeUsed, gain: gain, net: net, seuil: seuil };
+  return { cout: cout, subs: subs };
 }
 
 function ivCompute() {
   var c = ivCalc();
-  ivEl.net.textContent = c.cout > 0 ? fmtInt(c.cout - c.gain) + ' K' : '–';
-  ivEl.net.className = 'v';
-  ivEl.seuil.textContent = c.seuil === null ? '–' : fmtInt(c.seuil) + ' K';
+  ivEl.net.textContent = c.cout > 0 ? fmtInt(c.cout) + ' K' : '–';
   try { localStorage.setItem('ku_iv_draft', JSON.stringify(ivSnapshot())); } catch (e) {}
 }
 
 function ivSnapshot() {
   return {
-    name: ivEl.name.value, prix: ivEl.prix.value, rows: iv.rows,
-    avant: ivEl.avant.value, apres: ivEl.apres.value, editing: iv.editing, icon: iv.icon
+    name: ivEl.name.value, rows: iv.rows, icon: iv.icon
   };
 }
 function ivApply(d) {
   ivEl.name.value = d.name || '';
-  ivEl.prix.value = fmtField(d.prix);
   iv.rows = (d.rows && d.rows.length) ? d.rows.map(function (r) {
     return { name: r.name || '', qty: r.qty, price: r.price, icon: r.icon, id: r.id, src: r.src, at: r.at, from: r.from, fr: r.fr };
   }) : blankRows(8);
-  ivEl.avant.value = fmtField(d.avant);
-  ivEl.apres.value = fmtField(d.apres);
-  iv.editing = d.editing || null;
+  iv.editing = null;
   iv.icon = d.icon || null;
   ivSyncPrices();
   ivRenderHead();
@@ -562,7 +550,7 @@ ivEl.tbody.addEventListener('input', function (e) {
     ivCompute();
   }
 });
-[ivEl.name, ivEl.prix, ivEl.avant, ivEl.apres].forEach(function (i) {
+[ivEl.name].forEach(function (i) {
   i.addEventListener('input', ivCompute);
 });
 // Si on retape le nom à la main, l'image de l'ancien item n'a plus lieu d'être
@@ -647,47 +635,41 @@ function ivSaved() {
 function ivStore(a) {
   try { localStorage.setItem('ku_invest', JSON.stringify(a)); } catch (e) {}
 }
-ivEl.save.addEventListener('click', function () {
-  var c = ivCalc();
+// Identifiants consécutifs : on part après le plus grand existant, sinon deux
+// enregistrements rapprochés de plusieurs exemplaires produisent des doublons.
+function idLibre(a) {
+  var base = Date.now();
+  a.forEach(function (it) { if (+it.id >= base) base = +it.id + 1; });
+  return base;
+}
+// Recette valide du formulaire (nom + au moins une ressource avec une quantité)
+function ivRecipe() {
   var snap = ivSnapshot();
-  var a = ivSaved();
-  var name = snap.name.trim() || 'Sans nom';
-  var entry = {
-    id: iv.editing || Date.now(), name: name, prix: snap.prix, rows: snap.rows,
-    avant: snap.avant, apres: snap.apres, net: c.net, cout: c.cout, seuil: c.seuil, icon: iv.icon,
-    cost: c.cout - c.gain, price: nv(snap.prix),
-    date: new Date().toISOString()
-  };
-  var idx = -1;
-  a.forEach(function (it, i) { if (it.id === entry.id) idx = i; });
-  var qtyEl = document.getElementById('ivQty');
-  var n = Math.floor(nv(qtyEl.value)); n = n < 1 ? 1 : (n > 200 ? 200 : n);
-  var msg;
-  if (idx >= 0) {
-    // modification d'un exemplaire existant : un seul objet est mis à jour
-    keepHdv(entry, a[idx]); a[idx] = entry;
-    msg = entry.inv ? 'Mis à jour dans l\'inventaire : ' + name + '.' : 'Enregistré : ' + name + ' (déjà en vente, mis à jour).';
-    if (n > 1) msg += ' La quantité n\'est utilisée que pour un nouvel objet : clique sur « Vider le formulaire » pour en créer d\'autres.';
-  } else {
-    // nouveaux objets : un exemplaire indépendant par unité craftée
-    // Identifiants consécutifs : on part après le plus grand existant, sinon deux
-    // enregistrements rapprochés de plusieurs exemplaires produisent des doublons.
-    var base = Date.now();
-    a.forEach(function (it) { if (+it.id >= base) base = +it.id + 1; });
-    for (var k = n - 1; k >= 0; k--) {
-      var copy = JSON.parse(JSON.stringify(entry));
-      copy.id = base + k; copy.inv = true;
-      a.unshift(copy);
-    }
-    iv.editing = base;
-    msg = n > 1 ? n + ' exemplaires de ' + name + ' enregistrés séparément dans l\'inventaire.' : 'Enregistré dans l\'inventaire : ' + name + '. Tu le retrouves dans l\'onglet Inventaire.';
+  var rows = snap.rows.filter(function (r) { return r && String(r.name || '').trim() && nv(r.qty) > 0; })
+    .map(function (r) { return { name: String(r.name).trim(), icon: r.icon || null, qty: nv(r.qty), price: r.price, id: r.id || null }; });
+  var name = snap.name.trim();
+  if (!name || !rows.length) { setMsg(ivEl.saveMsg, 'Choisis un item avec sa recette (nom + ressources) avant de continuer.', 'err'); return null; }
+  var n = Math.floor(nv(document.getElementById('ivQty').value)); n = n < 1 ? 1 : (n > 200 ? 200 : n);
+  return { name: name, icon: snap.icon || null, rows: rows, n: n };
+}
+// Craft rapide : un exemplaire par objet directement dans l'Inventaire, au coût actuel, sans mise en vente
+document.getElementById('ivQuick').addEventListener('click', function () {
+  var r = ivRecipe();
+  if (!r) return;
+  var cout = 0; r.rows.forEach(function (x) { cout += nv(x.qty) * nv(x.price); });
+  var a = ivSaved(), base = idLibre(a);
+  for (var k = r.n - 1; k >= 0; k--) {
+    a.unshift({
+      id: base + k, name: r.name, prix: '', rows: JSON.parse(JSON.stringify(r.rows)), net: -cout, cout: cout,
+      seuil: 0, icon: r.icon, cost: cout, price: 0, date: new Date().toISOString(), inv: true
+    });
   }
-  qtyEl.value = '1';
   ivStore(a);
+  document.getElementById('ivQty').value = '1';
   refreshViews();
-  ivCompute();
-  setMsg(ivEl.saveMsg, msg, 'ok');
+  setMsg(ivEl.saveMsg, r.n + ' × ' + r.name + ' ajouté' + (r.n > 1 ? 's' : '') + ' à l\'Inventaire (coût : ' + fmtInt(cout) + ' K l\'unité). Fixe le prix de vente depuis l\'onglet Inventaire.', 'ok');
 });
+
 ivEl.clear.addEventListener('click', function () {
   ivApply({});
   setMsg(ivEl.msg, '');
@@ -941,6 +923,110 @@ flEl.clear.addEventListener('click', function () {
   flApply({});
   setMsg(flEl.saveMsg, '');
 });
+// ---------- Sous-pages de l'Atelier (Liste de courses / Forgemagie) ----------
+function showAtPane(id) {
+  document.querySelectorAll('.atpane').forEach(function (p) { p.classList.toggle('active', p.id === id); });
+  try { localStorage.setItem('ku_atp', id); } catch (e) {}
+  navSync();
+}
+try {
+  var atp = localStorage.getItem('ku_atp');
+  if (atp && document.getElementById(atp) && /^at-/.test(atp)) showAtPane(atp);
+} catch (e) {}
+
+// ---------- Forgemagie : une session coûte (valeur du stock de runes avant - après) ----------
+// On enregistre chaque session sur un objet de l'inventaire : les coûts s'additionnent au coût de craft.
+var fm = { sel: null, loaded: false };
+var fmEl = {
+  item: document.getElementById('fmItem'), hint: document.getElementById('fmHint'),
+  avant: document.getElementById('fmAvant'), apres: document.getElementById('fmApres'),
+  gain: document.getElementById('fmGain'), saved: document.getElementById('fmSaved'), total: document.getElementById('fmTotal'),
+  savedCard: document.getElementById('fmSavedCard'), totalCard: document.getElementById('fmTotalCard'),
+  back: document.getElementById('fmBack'), undo: document.getElementById('fmUndo'), msg: document.getElementById('fmMsg')
+};
+function fmItems() { return hdvEntries().filter(function (e) { return e.kind === 'craft' && isInv(e); }); }
+function fmUsed() { return fmEl.avant.value !== '' || fmEl.apres.value !== ''; }
+function fmSessionCost() { return nv(fmEl.avant.value) - nv(fmEl.apres.value); }
+function fmShowSession() {
+  var c = fmSessionCost();
+  if (fmUsed()) setSigned(fmEl.gain, (c > 0 ? '−' : (c < 0 ? '+' : '')) + fmtInt(Math.abs(c)) + ' K', -c);
+  else { fmEl.gain.textContent = '–'; fmEl.gain.className = 'v'; }
+}
+function fmCompute() {
+  fmShowSession();
+  try { localStorage.setItem('ku_fm_draft', JSON.stringify({ avant: fmEl.avant.value, apres: fmEl.apres.value })); } catch (er) {}
+}
+// Recharge la liste des objets et le récapitulatif de l'objet choisi (appelé à chaque rafraîchissement des vues)
+function fmRefresh() {
+  if (!fm.loaded) {
+    fm.loaded = true;
+    try { fm.sel = +localStorage.getItem('ku_fm_sel') || null; } catch (e) {}
+    try {
+      var d = JSON.parse(localStorage.getItem('ku_fm_draft') || 'null');
+      if (d) { fmEl.avant.value = fmtField(d.avant); fmEl.apres.value = fmtField(d.apres); }
+    } catch (e) {}
+  }
+  var list = fmItems(), counts = {};
+  if (fm.sel && !list.some(function (e) { return e.it.id === fm.sel; })) fm.sel = null;
+  fmEl.item.innerHTML = '<option value="">Aucun : calcul libre</option>' + list.map(function (e) {
+    counts[e.it.name] = (counts[e.it.name] || 0) + 1;
+    return '<option value="' + e.it.id + '"' + (e.it.id === fm.sel ? ' selected' : '') + '>' + esc(e.it.name) + ' (n° ' + counts[e.it.name] + ') · coût ' + esc(fmtInt(entryCost(e))) + ' K</option>';
+  }).join('');
+  var cur = fm.sel ? findEntry('craft', fm.sel) : null;
+  fmEl.hint.textContent = cur
+    ? 'Saisis les valeurs de ta session, puis enregistre : son coût s\'ajoute au coût de l\'objet. Tu peux enchaîner plusieurs sessions.'
+    : (list.length ? 'Choisis un objet pour y enregistrer tes sessions, ou clique sur « 🪄 Forgemager » dans l\'Inventaire.' : 'Aucun objet en inventaire : calcul libre. Les objets craftés apparaîtront ici.');
+  fmEl.savedCard.style.display = fmEl.totalCard.style.display = fmEl.back.style.display = cur ? '' : 'none';
+  var n = cur && cur.it.fmLog ? cur.it.fmLog.length : 0;
+  fmEl.undo.style.display = n ? '' : 'none';
+  if (cur) {
+    fmEl.saved.textContent = n ? '−' + fmtInt(+cur.it.fmCost || 0) + ' K (' + n + ' session' + (n > 1 ? 's' : '') + ')' : 'Aucune';
+    fmEl.saved.className = 'v' + (n ? ' neg' : '');
+    fmEl.total.textContent = fmtInt(entryCost(cur)) + ' K';
+  }
+  fmShowSession();
+}
+function fmSelect(id) {
+  fm.sel = id || null; fm.loaded = true;
+  try { localStorage.setItem('ku_fm_sel', fm.sel ? String(fm.sel) : ''); } catch (e) {}
+  setMsg(fmEl.msg, '');
+  showTab('atelier');
+  showAtPane('at-fm');
+  window.scrollTo(0, 0);
+}
+[fmEl.avant, fmEl.apres].forEach(function (i) { i.addEventListener('input', fmCompute); });
+fmEl.item.addEventListener('change', function () {
+  fm.sel = +fmEl.item.value || null;
+  try { localStorage.setItem('ku_fm_sel', fm.sel ? String(fm.sel) : ''); } catch (e) {}
+  setMsg(fmEl.msg, '');
+  fmRefresh();
+});
+fmEl.back.addEventListener('click', function () { showTab('inventaire'); window.scrollTo(0, 0); });
+document.getElementById('fmSave').addEventListener('click', function () {
+  if (!fm.sel || !findEntry('craft', fm.sel)) { setMsg(fmEl.msg, 'Choisis d\'abord l\'objet de l\'inventaire sur lequel enregistrer cette session.', 'err'); return; }
+  if (!fmUsed()) { setMsg(fmEl.msg, 'Saisis la valeur de ton stock de runes avant et après la session.', 'err'); return; }
+  var cost = fmSessionCost(), name = findEntry('craft', fm.sel).it.name;
+  updateEntry('craft', fm.sel, function (it) {
+    it.fmLog = (it.fmLog || []).concat([{ cost: cost, date: new Date().toISOString() }]);
+    it.fmCost = (+it.fmCost || 0) + cost;
+  });
+  fmEl.avant.value = ''; fmEl.apres.value = '';
+  fmCompute();
+  refreshViews();
+  setMsg(fmEl.msg, 'Session enregistrée sur « ' + name + ' » : ' + (cost >= 0 ? '−' : '+') + fmtInt(Math.abs(cost)) + ' K.', 'ok');
+});
+fmEl.undo.addEventListener('click', function () {
+  var e = fm.sel ? findEntry('craft', fm.sel) : null;
+  if (!e || !e.it.fmLog || !e.it.fmLog.length) return;
+  updateEntry('craft', fm.sel, function (it) {
+    var last = it.fmLog.pop();
+    it.fmCost = (+it.fmCost || 0) - (+last.cost || 0);
+    if (!it.fmLog.length) { delete it.fmLog; delete it.fmCost; }
+  });
+  refreshViews();
+  setMsg(fmEl.msg, 'Dernière session annulée.', 'ok');
+});
+
 // ---------- Sous-onglets d'Investissements (Craft / Achat-revente) ----------
 var ivPillBtns = document.querySelectorAll('#ivPills button');
 function showIvPane(id) {
@@ -978,7 +1064,11 @@ function entryPrice(e) {
   if (it.price != null && isFinite(it.price)) return +it.price;
   return nv(e.kind === 'craft' ? it.prix : it.vente);
 }
+// Coût d'un craft = ressources (coût de base) + coût cumulé des sessions de forgemagie
 function entryCost(e) {
+  return entryBaseCost(e) + (e.kind === 'craft' ? (+e.it.fmCost || 0) : 0);
+}
+function entryBaseCost(e) {
   var it = e.it;
   if (it.cost != null && isFinite(it.cost)) return +it.cost;
   if (e.kind === 'flip') return nv(it.achat);
@@ -1076,16 +1166,24 @@ function hdvItemHtml(e) {
     (n ? ' (' + n + ' actualisation' + (n > 1 ? 's' : '') + ')' : '') +
     '<br>Prix minimum pour une prochaine actualisation : <b>' + fmtInt(minPrice) + ' K</b></div>' +
     '<div class="hdv-btns"><button class="btn-s" data-act="sold">✓ Vendu</button>' +
-    '<button class="btn-s alt" data-act="edit">Modifier le calcul</button>' +
+    (e.kind === 'flip' ? '<button class="btn-s alt" data-act="edit">Modifier le calcul</button>' : '') +
     '<button class="btn-s alt" data-act="rm">Supprimer</button></div></div>';
+}
+function invPrevText(price, cost) {
+  var net = price * (1 - TAX) - cost;
+  return 'Bénéfice estimé : <b class="' + (net >= 0 ? 'pos' : 'neg') + '">' + fmtInt(net) + ' K</b> (taxe de 2 % déduite)';
 }
 function hdvInvHtml(e) {
   var it = e.it, price = entryPrice(e), cost = entryCost(e), net = price * (1 - TAX) - cost;
   return '<div class="saved-item" data-k="' + e.kind + '" data-id="' + it.id + '"><div>' +
     '<div class="n">' + imgTag(it.icon, 'si') + '<span>' + esc(it.name) + '</span></div>' +
-    '<div class="s">Coût de craft : ' + fmtInt(cost) + ' K' + (price > 0 ? ' · Prix prévu : ' + fmtInt(price) + ' K · Bénéfice estimé : ' + fmtInt(net) + ' K' : '') + '</div></div>' +
-    '<div class="b"><button class="btn-s" data-act="list">🏷️ Mettre en vente</button>' +
-    '<button class="btn-s alt" data-act="edit">Modifier le calcul</button>' +
+    '<div class="s">Coût de craft : ' + fmtInt(entryBaseCost(e)) + ' K' +
+    (it.fmLog && it.fmLog.length ? '<br>Forgemagie : <b class="neg">−' + fmtInt(+it.fmCost || 0) + ' K</b> (' + it.fmLog.length + ' session' + (it.fmLog.length > 1 ? 's' : '') + ') · coût total : <b>' + fmtInt(cost) + ' K</b>' : '') + '</div>' +
+    '<div class="hdv-lbl" style="margin-top:10px">Prix de vente</div>' +
+    '<div class="input-wrap" style="max-width:240px"><input type="text" data-num inputmode="decimal" class="ip" placeholder="Prix en HDV" value="' + (price > 0 ? esc(fmtField(price)) : '') + '"><span class="unit">K</span></div>' +
+    '<div class="s inv-prev" style="margin-top:6px">' + (price > 0 ? invPrevText(price, cost) : '') + '</div></div>' +
+    '<div class="b"><button class="btn-s alt" data-act="fm">🪄 Forgemager</button>' +
+    '<button class="btn-s" data-act="list">🏷️ Mettre en vente</button>' +
     '<button class="btn-s alt" data-act="rm">Supprimer</button></div></div>';
 }
 function dateFr(ts) {
@@ -1236,8 +1334,12 @@ function hdvClick(e) {
       it.soldNet = entryNet(x);
     });
     refreshViews();
+  } else if (act === 'fm') {
+    fmSelect(id);
   } else if (act === 'list') {
-    updateEntry(kind, id, function (it) { delete it.inv; delete it.listPrice; it.date = new Date().toISOString(); });
+    var ip = box.querySelector('.ip'), pr = ip ? nv(ip.value) : entryPrice(entry);
+    if (!(pr > 0)) { setMsg(document.getElementById('invMsg'), 'Indique le prix de vente de « ' + entry.it.name + ' » avant de le mettre en vente.', 'err'); if (ip) ip.focus(); return; }
+    updateEntry(kind, id, function (it) { delete it.inv; delete it.listPrice; it.price = pr; it.prix = String(pr); it.date = new Date().toISOString(); });
     refreshViews();
     setMsg(document.getElementById('invMsg'), '« ' + entry.it.name + ' » est maintenant dans l\'onglet Hôtel de vente.', 'ok');
   } else if (act === 'unsold') {
@@ -1265,6 +1367,13 @@ function hdvClick(e) {
 hdvEl.list.addEventListener('click', hdvClick);
 hdvEl.soldList.addEventListener('click', hdvClick);
 hdvEl.inv.addEventListener('click', hdvClick);
+hdvEl.inv.addEventListener('input', function (e) {
+  if (!(e.target.classList && e.target.classList.contains('ip'))) return;
+  var box = e.target.closest('[data-k]'), en = box && findEntry(box.dataset.k, +box.dataset.id);
+  if (!en) return;
+  var pr = nv(e.target.value), out = box.querySelector('.inv-prev');
+  out.innerHTML = pr > 0 ? invPrevText(pr, entryCost(en)) : '';
+});
 hdvEl.list.addEventListener('input', function (e) {
   var c = e.target.classList;
   if (c && c.contains('hp')) hdvPreview(e.target.closest('.hdv-item'));
@@ -1381,6 +1490,7 @@ function refreshViews() {
   dashRender();
   almRender();
   atRender();
+  fmRefresh();
   backupRender();
 }
 
@@ -1623,7 +1733,9 @@ function atRender() {
       '<div class="at-step"><button data-at="minus" aria-label="Moins">−</button>' +
       '<input type="text" inputmode="numeric" data-at="qty" value="' + atQty(it.qty) + '">' +
       '<button data-at="plus" aria-label="Plus">+</button></div>' +
-      '<button class="at-x" data-at="del" aria-label="Retirer">✕</button></div>';
+      '<button class="at-x" data-at="del" aria-label="Retirer">✕</button>' +
+      '<div class="at-act"><button class="btn-s" data-at="crafted">✓ Crafté</button>' +
+      (n > 1 ? '<button class="btn-s alt" data-at="craftedall">✓ Tout crafté (' + n + ')</button>' : '') + '</div></div>';
   }).join('');
 
   var done = atDone(), stock = atStock(), tot = atTotals(), all = 0, left = 0;
@@ -1641,6 +1753,37 @@ function atRender() {
     : '<div class="soon">Aucune ressource avec une quantité.</div>';
 }
 
+// Objet crafté en jeu : un exemplaire par unité part dans l'Inventaire, les ressources utilisées sortent du stock
+function atCraft(a, idx, n) {
+  var it = a[idx];
+  n = Math.max(1, Math.min(n, atQty(it.qty)));
+  var rows = (it.rows || []).filter(function (r) { return r && String(r.name || '').trim() && nv(r.qty) > 0; })
+    .map(function (r) { return { name: r.name, qty: r.qty, price: r.price, icon: r.icon || null, id: r.id || null }; });
+  var cout = 0; rows.forEach(function (r) { cout += nv(r.qty) * nv(r.price); });
+  var cost = it.cost != null && isFinite(it.cost) ? +it.cost : cout, prix = nv(it.prix);
+  var inv = ivSaved(), base = idLibre(inv);
+  for (var k = n - 1; k >= 0; k--) {
+    inv.unshift({
+      id: base + k, name: it.name, prix: it.prix || '', rows: JSON.parse(JSON.stringify(rows)),
+      avant: it.avant || '', apres: it.apres || '', net: prix > 0 ? prix * (1 - TAX) - cost : -cost,
+      cout: cout, seuil: 0, icon: it.icon || null, cost: cost, price: prix,
+      date: new Date().toISOString(), inv: true
+    });
+  }
+  ivStore(inv);
+  var st = atStock();
+  rows.forEach(function (r) {
+    var key = atKey(r.name), left = Math.max(0, nv(st[key]) - nv(r.qty) * n);
+    if (left > 0) st[key] = left; else delete st[key];
+  });
+  try { localStorage.setItem('ku_atelier_stock', JSON.stringify(st)); } catch (e) {}
+  it.qty = atQty(it.qty) - n;
+  if (it.qty < 1) a.splice(idx, 1);
+  atStore(a);
+  refreshViews();
+  setMsg(document.getElementById('atItemMsg'), n + ' × ' + it.name + ' ajouté' + (n > 1 ? 's' : '') + ' à l\'Inventaire (une ligne par objet). Les ressources utilisées sont retirées de ton stock.', 'ok');
+}
+
 atEl.items.addEventListener('click', function (e) {
   var b = e.target.closest ? e.target.closest('[data-at]') : null;
   var row = e.target.closest ? e.target.closest('.at-item') : null;
@@ -1648,6 +1791,7 @@ atEl.items.addEventListener('click', function (e) {
   var id = row.dataset.id, a = atSaved();
   var idx = -1; a.forEach(function (it, i) { if (String(it.id) === id) idx = i; });
   if (idx < 0) return;
+  if (b.dataset.at === 'crafted' || b.dataset.at === 'craftedall') { atCraft(a, idx, b.dataset.at === 'craftedall' ? atQty(a[idx].qty) : 1); return; }
   if (b.dataset.at === 'del') a.splice(idx, 1);
   else a[idx].qty = Math.max(1, atQty(a[idx].qty) + (b.dataset.at === 'plus' ? 1 : -1));
   atStore(a); atRender();
@@ -1696,19 +1840,17 @@ document.getElementById('atCopy').addEventListener('click', function () {
 
 // Depuis Investissements → Craft
 document.getElementById('ivAtAdd').addEventListener('click', function () {
-  var snap = ivSnapshot();
-  var rows = snap.rows.filter(function (r) { return r && String(r.name || '').trim() && nv(r.qty) > 0; })
-    .map(function (r) { return { name: String(r.name).trim(), icon: r.icon || null, qty: nv(r.qty), price: r.price, id: r.id || null }; });
-  var name = snap.name.trim();
-  if (!name || !rows.length) { setMsg(ivEl.saveMsg, 'Choisis un item avec sa recette (nom + ressources) avant de l\'ajouter à l\'Atelier.', 'err'); return; }
-  var n = atQty(document.getElementById('ivAtQty').value);
+  var r = ivRecipe();
+  if (!r) return;
+  var cout = 0; r.rows.forEach(function (x) { cout += nv(x.qty) * nv(x.price); });
   var a = atSaved(), found = null;
-  a.forEach(function (it) { if (atKey(it.name) === atKey(name)) found = it; });
-  if (found) { found.qty = Math.min(9999, atQty(found.qty) + n); found.rows = rows; found.icon = snap.icon || found.icon || null; }
-  else a.push({ id: Date.now(), name: name, icon: snap.icon || null, qty: n, rows: rows });
+  a.forEach(function (it) { if (atKey(it.name) === atKey(r.name)) found = it; });
+  if (found) { found.qty = Math.min(9999, atQty(found.qty) + r.n); found.rows = r.rows; found.icon = r.icon || found.icon || null; found.cost = cout; delete found.prix; }
+  else a.push({ id: Date.now(), name: r.name, icon: r.icon, qty: r.n, rows: r.rows, cost: cout });
   atStore(a);
+  document.getElementById('ivQty').value = '1';
   refreshViews();
-  setMsg(ivEl.saveMsg, 'Ajouté à l\'Atelier : ' + n + ' × ' + name + '.', 'ok');
+  setMsg(ivEl.saveMsg, 'Ajouté à l\'Atelier : ' + r.n + ' × ' + r.name + '.', 'ok');
 });
 
 // ---------- Prix des ressources (pour les crafts de l'Atelier) ----------
@@ -2109,7 +2251,7 @@ var QR = (function () {
 // ---------- Transfert vers un autre appareil par QR code ----------
 // Les données sont compressées, découpées en parties ; chaque QR code contient un lien du site avec une partie.
 // L'appareil qui scanne n'a besoin d'aucune application : l'appareil photo ouvre le lien, le site assemble les parties.
-var SYNC_SKIP = { ku_iv_draft: 1, ku_fl_draft: 1, ku_tab: 1, ku_ivp: 1, ku_calc: 1, ku_period: 1 };
+var SYNC_SKIP = { ku_iv_draft: 1, ku_fl_draft: 1, ku_fm_draft: 1, ku_fm_sel: 1, ku_atp: 1, ku_tab: 1, ku_ivp: 1, ku_calc: 1, ku_period: 1 };
 var SYNC_CHUNK = 350;
 var sync = { urls: [], i: 0 };
 
