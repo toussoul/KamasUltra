@@ -808,8 +808,11 @@ var flEl = {
   name: document.getElementById('flName'), achat: document.getElementById('flAchat'),
   vente: document.getElementById('flVente'), net: document.getElementById('flNet'),
   head: document.getElementById('flHead'), save: document.getElementById('flSave'),
-  clear: document.getElementById('flClear'), saveMsg: document.getElementById('flSaveMsg')
+  clear: document.getElementById('flClear'), saveMsg: document.getElementById('flSaveMsg'),
+  bulk: document.getElementById('flBulk'), qty: document.getElementById('flQty')
 };
+// Affichage des nombres décimaux (prix unitaires de lots : 0,35 K par exemple)
+function fmtDec(n) { return (Math.round(n * 1000) / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 3 }); }
 
 function flRenderHead() {
   var name = flEl.name.value.trim();
@@ -821,28 +824,48 @@ function flRenderHead() {
     flEl.head.innerHTML = '';
   }
 }
-function flCalc() {
+function flQtyVal() { var n = Math.floor(nv(flEl.qty.value)); return n < 1 ? 1 : n; }
+function flCalc() { // bénéfice net d'UNE unité
   return nv(flEl.vente.value) * (1 - TAX) - nv(flEl.achat.value);
 }
 function flSnapshot() {
-  return { name: flEl.name.value, achat: flEl.achat.value, vente: flEl.vente.value, icon: fl.icon, editing: fl.editing };
+  return { name: flEl.name.value, achat: flEl.achat.value, vente: flEl.vente.value, icon: fl.icon, editing: fl.editing,
+    bulk: flEl.bulk.checked, qty: flEl.qty.value };
+}
+function flLayout() {
+  var b = flEl.bulk.checked;
+  document.getElementById('flQtyField').style.display = b ? '' : 'none';
+  document.getElementById('flUnitCard').style.display = b ? '' : 'none';
+  document.getElementById('flInvCard').style.display = b ? '' : 'none';
+  document.getElementById('flAchatL').textContent = b ? "Prix d'achat unitaire" : "Prix d'achat";
+  document.getElementById('flVenteL').textContent = b ? 'Prix de vente unitaire' : 'Prix de vente';
+  document.getElementById('flNetK').textContent = b ? 'Bénef net total' : 'Bénef net';
+  document.getElementById('flHelp').textContent = b
+    ? "Prix de vente unitaire après taxe de 2 %, moins le prix d'achat unitaire, multiplié par la quantité."
+    : "Prix de vente après taxe de 2 %, moins le prix d'achat.";
 }
 function flCompute() {
-  var net = flCalc();
-  setSigned(flEl.net, fmtInt(net) + ' K', net);
+  var unit = flCalc(), b = flEl.bulk.checked, q = b ? flQtyVal() : 1;
+  flLayout();
+  setSigned(flEl.net, fmtInt(unit * q) + ' K', unit * q);
+  setSigned(document.getElementById('flUnitNet'), fmtDec(unit) + ' K', unit);
+  document.getElementById('flInvest').textContent = fmtInt(nv(flEl.achat.value) * q) + ' K';
   try { localStorage.setItem('ku_fl_draft', JSON.stringify(flSnapshot())); } catch (e) {}
 }
 function flApply(d) {
   flEl.name.value = d.name || '';
   flEl.achat.value = fmtField(d.achat);
   flEl.vente.value = fmtField(d.vente);
+  flEl.bulk.checked = !!d.bulk;
+  flEl.qty.value = d.bulk && d.qty ? fmtField(d.qty) : '';
   fl.icon = d.icon || null;
   fl.editing = d.editing || null;
   flRenderHead();
   flCompute();
 }
 
-[flEl.achat, flEl.vente].forEach(function (i) { i.addEventListener('input', flCompute); });
+[flEl.achat, flEl.vente, flEl.qty].forEach(function (i) { i.addEventListener('input', flCompute); });
+flEl.bulk.addEventListener('change', flCompute);
 flEl.name.addEventListener('input', function () {
   if (fl.icon) { fl.icon = null; flRenderHead(); }
   flCompute();
@@ -863,19 +886,30 @@ function flStore(a) {
 flEl.save.addEventListener('click', function () {
   var snap = flSnapshot();
   var name = snap.name.trim() || 'Sans nom';
+  var bulk = !!snap.bulk, q = bulk ? flQtyVal() : 1;
   var entry = {
     id: fl.editing || Date.now(), name: name, achat: snap.achat, vente: snap.vente,
-    icon: fl.icon, net: flCalc(), cost: nv(snap.achat), price: nv(snap.vente),
+    icon: fl.icon, net: flCalc() * q, cost: nv(snap.achat), price: nv(snap.vente),
     date: new Date().toISOString()
   };
+  if (bulk) { entry.bulk = true; entry.qty = q; entry.stock = q; }
   var a = flSaved(), idx = -1;
   a.forEach(function (it, i) { if (it.id === entry.id) idx = i; });
-  if (idx >= 0) { keepHdv(entry, a[idx]); a[idx] = entry; } else a.unshift(entry);
+  if (idx >= 0) {
+    var old = a[idx];
+    keepHdv(entry, old);
+    if (bulk && old.bulk) { // on garde le nombre d'unités déjà vendues
+      var sold = Math.max(0, Math.floor(nv(old.qty)) - Math.floor(nv(old.stock)));
+      entry.stock = Math.max(0, q - sold);
+    }
+    if (!bulk && old.bulk) { delete entry.fees; delete entry.updates; delete entry.listPrice; } // lot redevenu objet seul
+    a[idx] = entry;
+  } else a.unshift(entry);
   fl.editing = entry.id;
   flStore(a);
   refreshViews();
   flCompute();
-  setMsg(flEl.saveMsg, 'Enregistré : ' + name + '. Il apparaît dans Hôtel de vente.', 'ok');
+  setMsg(flEl.saveMsg, 'Enregistré : ' + (bulk ? fmtInt(q) + ' × ' : '') + name + '. ' + (bulk ? 'Le lot apparaît dans Hôtel de vente avec son stock.' : 'Il apparaît dans Hôtel de vente.'), 'ok');
 });
 flEl.clear.addEventListener('click', function () {
   flApply({});
@@ -933,9 +967,13 @@ function entryTaxBase(e) {
 }
 function entryNet(e, price) {
   var p = price == null ? entryPrice(e) : price;
-  return p - TAX * entryTaxBase(e) - entryCost(e) - entryFees(e);
+  var unit = p - TAX * entryTaxBase(e) - entryCost(e);
+  return (isLot(e) ? lotStock(e) * unit : unit) - entryFees(e);
 }
 function isSold(e) { return !!e.it.soldAt; }
+// Un lot = achat de gros : on suit un stock, vendu par morceaux
+function isLot(e) { return e.kind === 'flip' && !!e.it.bulk && !e.it.sale; }
+function lotStock(e) { return Math.max(0, Math.floor(nv(e.it.stock))); }
 function isInv(e) { return !!e.it.inv && !e.it.soldAt; }
 function isListed(e) { return !e.it.soldAt && !e.it.inv; }
 
@@ -967,7 +1005,35 @@ var hdvEl = {
   inv: document.getElementById('hdvInv')
 };
 
+var LOT_SIZES = [1, 10, 100, 1000];
+function hdvLotHtml(e) {
+  var it = e.it, unit = entryPrice(e), cost = entryCost(e), fees = entryFees(e), stock = lotStock(e);
+  var total = Math.max(stock, Math.floor(nv(it.qty))), n = +it.updates || 0, net = entryNet(e);
+  var value = stock * unit;
+  return '<div class="hdv-item" data-k="flip" data-id="' + it.id + '" data-lot="1">' +
+    '<div class="hdv-top"><div class="n">' + imgTag(it.icon, 'si') + '<span>' + esc(it.name) + '</span></div>' +
+    '<div class="hdv-net ' + (net >= 0 ? 'pos' : 'neg') + '">' + fmtInt(net) + ' K</div></div>' +
+    '<div class="hdv-meta" style="margin:0 0 10px">Stock restant : <b>' + fmtInt(stock) + '</b> / ' + fmtInt(total) +
+    ' · déjà vendus : ' + fmtInt(total - stock) + '<br>' +
+    'Valeur du stock : <b>' + fmtInt(value) + ' K</b> (≈ ' + fmtInt(value - stock * TAX * entryTaxBase(e)) + ' K après taxe de 2 %)<br>' +
+    'Prix d\'achat unitaire : ' + fmtDec(cost) + ' K · prix de vente unitaire : <b>' + fmtDec(unit) + ' K</b></div>' +
+    '<div class="hdv-lbl">Actualiser le prix</div>' +
+    '<div class="hdv-price"><select class="ls" style="flex:none;width:auto">' + LOT_SIZES.map(function (l) {
+      return '<option value="' + l + '">Lot de ' + l + '</option>'; }).join('') + '</select>' +
+    '<div class="input-wrap"><input type="text" data-num inputmode="decimal" class="lp" value="' + esc(fmtField(Math.round(unit * 1000) / 1000)) + '"><span class="unit">K / lot</span></div>' +
+    '<button class="btn-s" data-act="lotupd" disabled>Actualiser</button></div>' +
+    '<div class="hdv-prev"></div>' +
+    '<div class="hdv-meta">Frais d\'actualisation payés : ' + fmtInt(fees) + ' K' +
+    (n ? ' (' + n + ' actualisation' + (n > 1 ? 's' : '') + ')' : '') + '</div>' +
+    '<div class="hdv-lbl" style="margin-top:12px">Vente</div>' +
+    '<div class="hdv-price"><div class="input-wrap"><input type="text" data-num inputmode="numeric" class="sq" placeholder="Quantité vendue"></div>' +
+    '<button class="btn-s" data-act="lotsold">✓ Vendu</button></div>' +
+    '<div class="msg lot-msg" style="margin:6px 0 0"></div>' +
+    '<div class="hdv-btns"><button class="btn-s alt" data-act="edit">Modifier le calcul</button>' +
+    '<button class="btn-s alt" data-act="rm">Supprimer</button></div></div>';
+}
 function hdvItemHtml(e) {
+  if (isLot(e)) return hdvLotHtml(e);
   var it = e.it, price = entryPrice(e), cost = entryCost(e), fees = entryFees(e), net = entryNet(e);
   var n = +it.updates || 0;
   // Prix à partir duquel une actualisation (frais de 1 % inclus) laisse encore un bénéfice
@@ -1001,11 +1067,12 @@ function dateFr(ts) {
 }
 function hdvSoldHtml(e) {
   var it = e.it;
+  var sale = !!it.sale;
   return '<div class="saved-item" data-k="' + e.kind + '" data-id="' + it.id + '"><div>' +
     '<div class="n">' + imgTag(it.icon, 'si') + '<span>' + esc(it.name) + '</span></div>' +
-    '<div class="s">Vendu le ' + esc(dateFr(it.soldAt)) + ' à ' + fmtInt(+it.soldPrice || 0) + ' K</div></div>' +
+    '<div class="s">Vendu le ' + esc(dateFr(it.soldAt)) + (sale ? ' : ' + fmtInt(nv(it.qty)) + ' × à ' + fmtDec(+it.soldPrice || 0) + ' K' : ' à ' + fmtInt(+it.soldPrice || 0) + ' K') + '</div></div>' +
     '<div class="v ' + ((+it.soldNet || 0) >= 0 ? 'pos' : 'neg') + '" style="font-size:18px;font-weight:700">' + fmtInt(+it.soldNet || 0) + ' K</div>' +
-    '<div class="b"><button class="btn-s" data-act="unsold">Remettre en vente</button>' +
+    '<div class="b">' + (sale ? '' : '<button class="btn-s" data-act="unsold">Remettre en vente</button>') +
     '<button class="btn-s alt" data-act="rm">Supprimer</button></div></div>';
 }
 function hdvRender() {
@@ -1044,6 +1111,65 @@ function hdvPreview(box) {
   prev.innerHTML = 'Après actualisation à ' + fmtInt(p) + ' K : frais +' + fmtInt(fee) + ' K, bénéfice <b class="' +
     (net >= 0 ? 'pos' : 'neg') + '">' + fmtInt(net) + ' K</b>' + (net < 0 ? ' (actualisation à perte)' : '');
 }
+// Lots : prix par lot (1, 10, 100…) -> prix unitaire ; frais de 1 % sur la valeur du stock remis en vente
+function lotInputs(box) {
+  var L = +box.querySelector('.ls').value || 1;
+  var lotPrice = nv(box.querySelector('.lp').value);
+  return { L: L, lotPrice: lotPrice, unit: lotPrice / L };
+}
+function hdvLotPreview(box) {
+  var e = findEntry(box.dataset.k, +box.dataset.id);
+  if (!e) return;
+  var btn = box.querySelector('[data-act="lotupd"]'), prev = box.querySelector('.hdv-prev');
+  var q = lotInputs(box), stock = lotStock(e);
+  if (!(q.unit > 0) || Math.abs(q.unit - entryPrice(e)) < 1e-9 || !stock) { prev.innerHTML = ''; btn.disabled = true; return; }
+  var fee = q.unit * stock * FEE, net = entryNet(e, q.unit) - fee;
+  btn.disabled = false;
+  prev.innerHTML = 'Soit ' + fmtDec(q.unit) + ' K l\'unité. Remise en vente de ' + fmtInt(stock) + ' unités (' + fmtDec(stock / q.L) + ' lot' + (stock / q.L > 1 ? 's' : '') +
+    ' de ' + q.L + ') : frais +' + fmtInt(fee) + ' K, bénéfice potentiel <b class="' + (net >= 0 ? 'pos' : 'neg') + '">' + fmtInt(net) + ' K</b>' +
+    (net < 0 ? ' (à perte)' : '');
+}
+function hdvLotUpdate(box) {
+  var kind = box.dataset.k, id = +box.dataset.id, e = findEntry(kind, id);
+  if (!e) return;
+  var q = lotInputs(box), stock = lotStock(e);
+  if (!(q.unit > 0) || !stock) return;
+  var fee = q.unit * stock * FEE, net = entryNet(e, q.unit) - fee;
+  if (net < 0 && !window.confirm('À ce prix, l\'actualisation te fait perdre de l\'argent (bénéfice potentiel : ' + fmtInt(net) + ' K). Actualiser quand même ?')) return;
+  var before = entryPrice(e);
+  updateEntry(kind, id, function (it) {
+    if (it.listPrice == null) it.listPrice = before;
+    it.price = q.unit;
+    it.fees = (+it.fees || 0) + fee;
+    it.updates = (+it.updates || 0) + 1;
+  });
+  refreshViews();
+}
+function hdvLotSold(box) {
+  var kind = box.dataset.k, id = +box.dataset.id, e = findEntry(kind, id);
+  var msg = box.querySelector('.lot-msg');
+  if (!e) return;
+  var stock = lotStock(e), q = Math.floor(nv(box.querySelector('.sq').value));
+  if (!(q >= 1)) { setMsg(msg, 'Indique la quantité vendue.', 'err'); return; }
+  if (q > stock) { setMsg(msg, 'Tu n\'as que ' + fmtInt(stock) + ' unités en stock.', 'err'); return; }
+  var unit = entryPrice(e), cost = entryCost(e), feeShare = entryFees(e) * q / stock;
+  var soldNet = q * (unit - TAX * entryTaxBase(e) - cost) - feeShare;
+  var a = flSaved(), now = Date.now();
+  var rest = [];
+  a.forEach(function (it) {
+    if (it.id !== id) { rest.push(it); return; }
+    it.stock = stock - q;
+    it.fees = Math.max(0, (+it.fees || 0) - feeShare);
+    if (it.stock > 0) rest.push(it); // stock épuisé : le lot disparaît, l'historique reste dans « Vendus »
+  });
+  rest.unshift({
+    id: now + Math.floor(Math.random() * 1000), name: e.it.name, icon: e.it.icon || null, bulk: true, sale: true,
+    qty: q, soldAt: now, soldPrice: unit, soldNet: soldNet, cost: cost, date: new Date(now).toISOString()
+  });
+  flStore(rest);
+  if (stock - q <= 0 && fl.editing === id) fl.editing = null;
+  refreshViews();
+}
 function hdvUpdate(box) {
   var kind = box.dataset.k, id = +box.dataset.id;
   var e = findEntry(kind, id);
@@ -1070,7 +1196,11 @@ function hdvClick(e) {
   var entry = findEntry(kind, id);
   if (!entry) return;
 
-  if (act === 'upd') {
+  if (act === 'lotupd') {
+    hdvLotUpdate(box);
+  } else if (act === 'lotsold') {
+    hdvLotSold(box);
+  } else if (act === 'upd') {
     hdvUpdate(box);
   } else if (act === 'sold') {
     updateEntry(kind, id, function (it) {
@@ -1100,7 +1230,7 @@ function hdvClick(e) {
       setMsg(ivEl.msg, ''); setMsg(ivEl.saveMsg, '');
     } else {
       showIvPane('iv-flip');
-      flApply({ name: it.name, achat: it.achat, vente: price, icon: it.icon, editing: it.id });
+      flApply({ name: it.name, achat: it.achat, vente: price, icon: it.icon, editing: it.id, bulk: it.bulk, qty: it.qty });
       setMsg(flEl.saveMsg, '');
     }
     window.scrollTo(0, 0);
@@ -1110,7 +1240,17 @@ hdvEl.list.addEventListener('click', hdvClick);
 hdvEl.soldList.addEventListener('click', hdvClick);
 hdvEl.inv.addEventListener('click', hdvClick);
 hdvEl.list.addEventListener('input', function (e) {
-  if (e.target.classList && e.target.classList.contains('hp')) hdvPreview(e.target.closest('.hdv-item'));
+  var c = e.target.classList;
+  if (c && c.contains('hp')) hdvPreview(e.target.closest('.hdv-item'));
+  if (c && c.contains('lp')) hdvLotPreview(e.target.closest('.hdv-item'));
+});
+// Changer la taille du lot : le prix du lot suit (prix unitaire x taille)
+hdvEl.list.addEventListener('change', function (e) {
+  if (!(e.target.classList && e.target.classList.contains('ls'))) return;
+  var box = e.target.closest('.hdv-item'), en = findEntry(box.dataset.k, +box.dataset.id);
+  if (!en) return;
+  box.querySelector('.lp').value = fmtField(Math.round(entryPrice(en) * (+e.target.value || 1) * 1000) / 1000);
+  hdvLotPreview(box);
 });
 
 // ----- Dashboard -----
@@ -1198,7 +1338,9 @@ function dashRender() {
   var sold = all.filter(function (e) { return isSold(e) && e.it.soldAt >= r.start && e.it.soldAt < r.end; });
   var profit = 0;
   sold.forEach(function (e) { profit += +e.it.soldNet || 0; });
-  document.getElementById('dSoldCount').textContent = fmtInt(sold.length);
+  var units = 0;
+  sold.forEach(function (e) { units += e.it.sale ? Math.max(1, Math.floor(nv(e.it.qty))) : 1; });
+  document.getElementById('dSoldCount').textContent = fmtInt(units);
   setSigned(document.getElementById('dSoldProfit'), fmtInt(profit) + ' K', profit);
   document.getElementById('dPeriodCap').textContent = r.cap;
   periodBtns.forEach(function (b) { b.classList.toggle('active', b.dataset.period === period); });

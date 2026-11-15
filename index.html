@@ -196,15 +196,22 @@
 
       <div class="iv-sec">
         <div class="section-title">Achat et vente</div>
+        <label class="check" style="margin:0 0 14px"><input type="checkbox" id="flBulk"> Achat de gros</label>
+        <label class="field" id="flQtyField" style="display:none">
+          <span>Quantité achetée</span>
+          <div class="input-wrap">
+            <input id="flQty" type="text" data-num inputmode="numeric">
+          </div>
+        </label>
         <label class="field">
-          <span>Prix d'achat</span>
+          <span id="flAchatL">Prix d'achat</span>
           <div class="input-wrap">
             <input id="flAchat" type="text" data-num inputmode="decimal">
             <span class="unit">K</span>
           </div>
         </label>
         <label class="field" style="margin-bottom:0">
-          <span>Prix de vente</span>
+          <span id="flVenteL">Prix de vente</span>
           <div class="input-wrap">
             <input id="flVente" type="text" data-num inputmode="decimal">
             <span class="unit">K</span>
@@ -215,9 +222,11 @@
       <div class="iv-sec">
         <div class="section-title">Résultat</div>
         <div class="result">
-          <div class="card"><div class="k">Bénef net</div><div class="v" id="flNet">–</div></div>
+          <div class="card"><div class="k" id="flNetK">Bénef net</div><div class="v" id="flNet">–</div></div>
+          <div class="card" id="flUnitCard" style="display:none"><div class="k">Bénef net par unité</div><div class="v" id="flUnitNet">–</div></div>
+          <div class="card" id="flInvCard" style="display:none"><div class="k">Investissement total</div><div class="v" id="flInvest">–</div></div>
         </div>
-        <p class="opt" style="margin:10px 0 0">Prix de vente après taxe de 2 %, moins le prix d'achat.</p>
+        <p class="opt" style="margin:10px 0 0" id="flHelp">Prix de vente après taxe de 2 %, moins le prix d'achat.</p>
 
         <div class="actions">
           <button class="btn-s" id="flSave">💾 Enregistrer</button>
