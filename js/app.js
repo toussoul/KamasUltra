@@ -28,7 +28,6 @@ function showTab(name) {
     b.classList.toggle('active', b.dataset.tab === name);
     if (b.dataset.tab === name) document.getElementById('curTab').textContent = b.textContent.replace('▸', '').trim();
   });
-  try { localStorage.setItem('ku_tab', name); } catch (e) {}
   navSync(name);
   if (kuReady) refreshViews();
 }
@@ -138,8 +137,6 @@ try {
     el.base.value = saved.base; el.pa.value = saved.pa;
     el.ra.value = saved.ra; el.mode.value = saved.mode;
   }
-  var tab = localStorage.getItem('ku_tab');
-  if (tab && document.getElementById(tab)) showTab(tab);
 } catch (e) {}
 
 [el.base, el.pa, el.ra, el.mode].forEach(function (i) {
@@ -1527,7 +1524,7 @@ function refreshViews() {
 // ---------- Almanax (données : API Dofusdude) ----------
 var ALM_BASE = 'https://api.dofusdu.de/dofus3/v1/fr/almanax';
 var ALM_CHUNK = 30, ALM_CHUNKS = 13; // 13 x 30 jours = environ 1 an d'avance
-var alm = { status: 'idle', list: [], error: '', shown: 7, diag: '', filter: '' };
+var alm = { status: 'idle', list: [], error: '', shown: 7, diag: '', view: 'fav', pickOpen: false, types: [] };
 var almEl = {
   today: document.getElementById('almToday'), list: document.getElementById('almList'),
   more: document.getElementById('almMore'), retry: null
@@ -1630,10 +1627,32 @@ function almPriceSrc(i) {
   return (i.src === 'fichier' ? 'Price.json' : 'ton prix') + (i.at > 0 ? ', ' + dateFr(i.at) : '') + (RS_FRESH[i.fr] ? ', ' + RS_FRESH[i.fr] : '');
 }
 
+// Bonus suivis (3 maximum) : par défaut « Économie d'ingrédients » tant que rien n'a été choisi
+var ALM_MAXFAV = 3;
+function almFavGet(types) {
+  var raw = null;
+  try { raw = localStorage.getItem('ku_alm_fav'); } catch (e) {}
+  if (raw === null) {
+    var d = types.filter(function (t) { return /conomie d.ingr/i.test(t); });
+    return d.slice(0, 1);
+  }
+  try {
+    var a = JSON.parse(raw);
+    return Array.isArray(a) ? a.filter(function (x) { return typeof x === 'string'; }).slice(0, ALM_MAXFAV) : [];
+  } catch (e) { return []; }
+}
+function almFavSet(a) { try { localStorage.setItem('ku_alm_fav', JSON.stringify(a)); } catch (e) {} }
+function almWhen(n) { return n === 0 ? 'aujourd\'hui' : (n === 1 ? 'demain' : 'dans ' + n + ' jours'); }
+
 function almRender() {
+  almEl.favs = almEl.favs || document.getElementById('almFavs');
+  almEl.seg = almEl.seg || document.getElementById('almSeg');
+  almEl.pick = almEl.pick || document.getElementById('almPick');
+  almEl.note = almEl.note || document.getElementById('almNote');
+  function clear() { almEl.favs.innerHTML = almEl.seg.innerHTML = almEl.list.innerHTML = almEl.pick.innerHTML = ''; almEl.more.style.display = 'none'; }
   if (alm.status === 'loading' || alm.status === 'idle') {
     almEl.today.innerHTML = '<div class="soon">Chargement de l\'Almanax…</div>';
-    almEl.list.innerHTML = ''; almEl.more.style.display = 'none';
+    clear(); almEl.note.innerHTML = '';
     return;
   }
   if (alm.status === 'error') {
@@ -1642,7 +1661,7 @@ function almRender() {
       '<button class="btn-s" id="almRetry">Réessayer</button>' +
       '<a class="btn-s alt" href="https://www.krosmoz.com/fr/almanax" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">Voir l\'Almanax officiel</a></div>' +
       (alm.diag ? '<details style="margin-top:12px;text-align:left"><summary>Détails techniques</summary><div style="font-size:12px;word-break:break-word;margin-top:6px">' + esc(alm.diag) + '</div></details>' : '') + '</div>';
-    almEl.list.innerHTML = ''; almEl.more.style.display = 'none';
+    clear(); almEl.note.innerHTML = '';
     document.getElementById('almRetry').addEventListener('click', function () { almLoad(true); });
     return;
   }
@@ -1651,16 +1670,16 @@ function almRender() {
   if (!upcoming.length) upcoming = alm.list.slice(-1);
   var first = upcoming[0];
   var isToday = ymdToTs(first.date) === todayTs;
-  var long = { weekday: 'long', day: 'numeric', month: 'long' };
+  var dayN = function (x) { return Math.round((ymdToTs(x.date) - todayTs) / 86400000); };
 
+  // 1) carte du jour
   almEl.today.innerHTML = '<div class="alm-today">' + almImg(first.img, 'alm-big') + '<div class="alm-tx">' +
-    '<div class="k">' + (isToday ? 'Almanax du jour' : 'Prochain Almanax') + ' · ' + esc(almDateFr(first.date, long)) + '</div>' +
+    '<div class="k">' + (isToday ? 'Aujourd\'hui' : 'Prochain Almanax') + ' · ' + esc(almDateFr(first.date, { weekday: 'long', day: 'numeric', month: 'long' })) + '</div>' +
     '<div class="alm-item">' + esc(first.iname || '—') + (first.qty != null ? ' <b>× ' + fmtInt(first.qty) + '</b>' : '') + '</div>' +
     almPriceHtml(first) +
     (first.btype || first.bdesc ? '<div class="alm-bonus">' + (first.btype ? '<b>' + esc(first.btype) + '</b>' : '') +
       (first.btype && first.bdesc ? ' : ' : '') + esc(first.bdesc) + '</div>' : '') + '</div></div>';
 
-  var rest = upcoming.slice(1);
   function almPriceHtml(x) {
     var p = almPrice(x), rw = x.reward;
     var h = '<div class="alm-prix">';
@@ -1672,31 +1691,74 @@ function almRender() {
     }
     return h + '</div>';
   }
+  // 2) bonus suivis : une ligne par bonus avec le prochain jour concerné
   var types = {};
-  rest.forEach(function (x) { if (x.btype) types[x.btype] = 1; });
+  upcoming.forEach(function (x) { if (x.btype) types[x.btype] = 1; });
   var names = Object.keys(types).sort();
-  var filtered = alm.filter ? rest.filter(function (x) { return x.btype === alm.filter; }) : rest;
-  var shown = filtered.slice(0, alm.shown);
+  var favs = almFavGet(names);
+  almEl.favs.innerHTML = favs.map(function (f) {
+    var hit = null;
+    for (var i = 0; i < upcoming.length && !hit; i++) if (upcoming[i].btype === f) hit = upcoming[i];
+    return '<div class="alm-fav">⭐ <b>' + esc(f) + '</b> · ' + (hit
+      ? esc(almDateFr(hit.date, { weekday: 'short', day: 'numeric', month: 'short' })) + ' <span>(' + almWhen(dayN(hit)) + ')</span>'
+      : '<span>aucun jour connu pour l\'instant</span>') + '</div>';
+  }).join('');
+
+  // 3) liste : « Mes bonus » ou « Tous les jours »
+  var view = favs.length ? alm.view : 'all';
+  var rest = upcoming.slice(1);
+  var base = view === 'fav' ? rest.filter(function (x) { return favs.indexOf(x.btype) >= 0; }) : rest;
+  var shown = base.slice(0, alm.shown);
+  almEl.seg.innerHTML = favs.length
+    ? '<div class="alm-seg"><button class="alm-chip' + (view === 'fav' ? ' on' : '') + '" data-view="fav">⭐ Mes bonus</button>' +
+      '<button class="alm-chip' + (view === 'all' ? ' on' : '') + '" data-view="all">Tous les jours</button></div>'
+    : '<p class="opt" style="margin:14px 0 8px">Choisis les bonus à suivre en bas de cette carte : tu verras ici uniquement les jours qui t\'intéressent.</p>';
+  almEl.list.innerHTML = shown.length ? shown.map(function (x) {
+    var n = dayN(x);
+    var when = view === 'fav' ? almWhen(n) : (n === 1 ? 'demain' : '');
+    return '<div class="alm-row"><div class="alm-day"><b>' + esc(almDateFr(x.date, { day: 'numeric' })) + '</b><span>' +
+      esc(almDateFr(x.date, { weekday: 'short' }).replace('.', '')) + ' ' + esc(almDateFr(x.date, { month: 'short' }).replace('.', '')) + '</span></div>' +
+      almImg(x.img, 'alm-ico') + '<div class="alm-main"><div class="alm-rn">' + esc(x.iname || '—') + (x.qty != null ? ' <b>× ' + fmtInt(x.qty) + '</b>' : '') + '</div>' +
+      (x.btype && !(view === 'fav' && favs.length === 1) ? '<div class="alm-rb">' + esc(x.btype) + '</div>' : '') + '</div>' +
+      '<div class="alm-side">' + almRowPrice(x) + (when ? '<div class="alm-when">' + when + '</div>' : '') + '</div></div>';
+  }).join('') : '<div class="soon">' + (view === 'fav' ? 'Aucun jour avec tes bonus pour le moment.' : 'Rien à afficher.') + '</div>';
+  almEl.more.style.display = base.length > alm.shown ? '' : 'none';
+
+  // 4) choix des bonus suivis (replié)
+  alm.types = names;
+  almEl.pick.innerHTML = '<details class="alm-pick"' + (alm.pickOpen ? ' open' : '') + '><summary>⚙ Choisir mes bonus à suivre (' + favs.length + '/' + ALM_MAXFAV + ')</summary>' +
+    names.map(function (n, i) {
+      return '<label class="check"><input type="checkbox" data-fav="' + i + '"' + (favs.indexOf(n) >= 0 ? ' checked' : '') + '> ' + esc(n) + '</label>';
+    }).join('') + '</details>';
+
   var last = upcoming[upcoming.length - 1];
-  var head = '<div class="soon" style="padding:6px 0 10px;text-align:left">Visible jusqu\'au <b>' + esc(almDateFr(last.date, { day: 'numeric', month: 'long', year: 'numeric' })) + '</b> (' + upcoming.length + ' jours)</div>' +
-    '<select id="almFilter" style="width:100%;margin-bottom:10px"><option value="">Tous les bonus</option>' +
-    names.map(function (n) { return '<option value="' + esc(n) + '"' + (n === alm.filter ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') + '</select>';
-  almEl.list.innerHTML = head + (shown.length ? shown.map(function (x) {
-    var n = Math.round((ymdToTs(x.date) - todayTs) / 86400000);
-    var when = n === 1 ? 'demain' : (n > 1 ? 'dans ' + n + ' jours' : '');
-    return '<div class="alm-row">' + almImg(x.img, 'alm-ico') + '<div class="alm-main">' +
-      '<div class="alm-rd">' + esc(almDateFr(x.date, { weekday: 'short', day: 'numeric', month: 'short', year: n > 300 ? 'numeric' : undefined })) + (when ? ' · ' + when : '') + '</div>' +
-      '<div class="alm-rn">' + esc(x.iname || '—') + (x.qty != null ? ' <b>× ' + fmtInt(x.qty) + '</b>' : '') + '</div></div>' +
-      '<div class="alm-side">' + almRowPrice(x) + (x.btype ? '<div class="alm-rb">' + esc(x.btype) + '</div>' : '') + '</div></div>';
-  }).join('') : '<div class="soon">Aucun jour avec ce bonus.</div>');
-  document.getElementById('almFilter').addEventListener('change', function () { alm.filter = this.value; alm.shown = 7; almRender(); });
-  almEl.more.style.display = filtered.length > alm.shown ? '' : 'none';
+  almEl.note.innerHTML = 'Données jusqu\'au ' + esc(almDateFr(last.date, { day: 'numeric', month: 'long', year: 'numeric' })) +
+    ' · Source : <a href="https://www.dofusdu.de/" target="_blank" rel="noopener">Dofusdude</a> · <a href="https://www.krosmoz.com/fr/almanax" target="_blank" rel="noopener">Almanax officiel</a>';
 }
 function almRowPrice(x) {
   var p = almPrice(x);
   return '<div class="alm-rp" title="' + (p ? esc(almPriceSrc(p.info)) : 'prix inconnu') + '">' + (p ? fmtInt(p.total) + ' K' : '–') + '</div>';
 }
 almEl.more.addEventListener('click', function () { alm.shown += 30; almRender(); });
+document.getElementById('almBox').addEventListener('click', function (e) {
+  var c = e.target.closest ? e.target.closest('[data-view]') : null;
+  if (c) { alm.view = c.dataset.view; alm.shown = 7; almRender(); }
+});
+document.getElementById('almBox').addEventListener('change', function (e) {
+  var t = e.target;
+  if (!t.dataset || t.dataset.fav == null) return;
+  var name = alm.types && alm.types[+t.dataset.fav];
+  if (!name) return;
+  var cur = almFavGet(alm.types || []).filter(function (x) { return x !== name; });
+  if (t.checked) cur.push(name);
+  if (cur.length > ALM_MAXFAV) { cur = cur.slice(cur.length - ALM_MAXFAV); } // le plus ancien est remplacé
+  almFavSet(cur);
+  alm.shown = 7;
+  almRender();
+});
+document.getElementById('almBox').addEventListener('toggle', function (e) {
+  if (e.target && e.target.classList && e.target.classList.contains('alm-pick')) alm.pickOpen = e.target.open;
+}, true);
 
 
 // ---------- Atelier : plusieurs objets à fabriquer + liste de courses ----------
@@ -2501,7 +2563,6 @@ function bkRestore(payload, msgNode) {
   try {
     bkKeys().forEach(function (k) { localStorage.removeItem(k); });
     Object.keys(clean).forEach(function (k) { localStorage.setItem(k, clean[k]); });
-    localStorage.setItem('ku_tab', 'sauvegarde');
   } catch (e) {
     setMsg(out, 'Impossible d\'écrire les données dans ce navigateur (navigation privée ?).', 'err');
     return;

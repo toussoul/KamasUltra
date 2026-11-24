@@ -239,13 +239,23 @@
   .alm-item b, .alm-rn b { color: var(--accent); }
   .alm-bonus { font-size: 14px; color: var(--muted); line-height: 1.45; }
   .alm-bonus b { color: var(--text); }
-  .alm-row { display: flex; align-items: center; gap: 12px; background: #232323; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
-  .alm-ico { width: 36px; height: 36px; object-fit: contain; flex: none; }
+  .alm-row { display: flex; align-items: center; gap: 10px; background: #232323; border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; margin-bottom: 6px; }
+  .alm-day { width: 54px; flex: none; text-align: center; line-height: 1.15; }
+  .alm-day b { display: block; font-size: 18px; }
+  .alm-day span { white-space: nowrap; font-size: 11px; color: var(--muted); text-transform: uppercase; }
+  .alm-ico { width: 30px; height: 30px; object-fit: contain; flex: none; }
   .alm-main { flex: 1; min-width: 0; }
-  .alm-rd { font-size: 13px; color: var(--muted); }
-  .alm-rd::first-letter { text-transform: uppercase; }
-  .alm-rn { font-weight: 600; }
-  .alm-rb { font-size: 12px; color: var(--muted); text-align: right; max-width: 38%; }
+  .alm-rn { font-weight: 600; font-size: 14px; }
+  .alm-rb { font-size: 12px; color: var(--muted); }
+  .alm-when { font-size: 12px; color: var(--muted); text-align: right; flex: none; }
+  .alm-fav { font-size: 14px; padding: 8px 12px; margin-top: 10px; border-left: 3px solid var(--accent); background: #232323; border-radius: 0 8px 8px 0; }
+  .alm-fav span { color: var(--muted); }
+  .alm-seg { display: flex; gap: 8px; margin: 14px 0 10px; flex-wrap: wrap; }
+  .alm-chip { border: 1px solid var(--border); background: var(--field); color: var(--muted); padding: 6px 12px; border-radius: 999px; font: inherit; font-size: 13px; cursor: pointer; }
+  .alm-chip.on { background: var(--accent); border-color: var(--accent); color: #1a1a1a; font-weight: 600; }
+  .alm-pick { margin-top: 14px; font-size: 14px; }
+  .alm-pick summary { cursor: pointer; color: var(--muted); }
+  .alm-pick .check { display: flex; margin: 8px 0 0; }
   #almBox a { color: var(--accent); }
   .expl { margin: 0 0 12px; line-height: 1.55; }
   .expl.warn { color: #e0b45a; }
