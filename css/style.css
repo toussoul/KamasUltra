@@ -181,6 +181,16 @@
   .saved-item .n { font-weight: 600; }
   .saved-item .s { font-size: 13px; color: var(--muted); }
   .saved-item .b { display: flex; gap: 8px; }
+  #flowbar { display: none; position: sticky; top: var(--hh, 57px); z-index: 9; gap: 6px; padding: 8px 16px; background: var(--bg); border-bottom: 1px solid var(--border); }
+  #flowbar.on { display: flex; }
+  #calcbar { display: none; position: sticky; top: var(--hh, 57px); z-index: 9; gap: 6px; padding: 8px 16px; background: var(--bg); border-bottom: 1px solid var(--border); overflow-x: auto; white-space: nowrap; }
+  #calcbar.on { display: flex; }
+  #calcbar button { flex: none; padding: 8px 14px; border: 1px solid var(--border); border-radius: 18px; background: var(--field); color: var(--text); font-size: 14px; cursor: pointer; }
+  #calcbar button.cur { border-color: var(--accent); background: rgba(74,144,194,.18); color: var(--accent); font-weight: 700; }
+  #flowbar button { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; border: 1px solid var(--border); border-radius: 10px; background: var(--field); color: var(--text); font-size: 12px; line-height: 1.2; cursor: pointer; position: relative; }
+  #flowbar button .fi { font-size: 18px; }
+  #flowbar button.cur { border-color: var(--accent); background: rgba(74,144,194,.18); color: var(--accent); font-weight: 700; }
+  #flowbar .fb { position: absolute; top: -6px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; box-sizing: border-box; }
   .navlinks { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; }
   .atpane { display: none; }
   .atpane.active { display: block; }

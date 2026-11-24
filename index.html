@@ -17,37 +17,27 @@
   <nav id="nav" aria-label="Menu principal">
     <div class="nav-top"><span>Menu</span><button id="navClose" aria-label="Fermer le menu" style="width:auto">✕</button></div>
     <button data-tab="dashboard" class="active">Dashboard 🚀</button>
-    <div class="grp">
-      <button data-tab="investissements">Investissements 🪙 <span class="chev">▸</span></button>
-      <div class="sub">
-        <button data-sub="iv-craft" data-parent="investissements">Craft</button>
-        <button data-sub="iv-flip" data-parent="investissements">Achat-revente</button>
-      </div>
-    </div>
-    <div class="grp">
-      <button data-tab="atelier">Atelier 🛠️ <span class="chev">▸</span></button>
-      <div class="sub">
-        <button data-sub="at-list" data-parent="atelier">Liste de courses</button>
-        <button data-sub="at-fm" data-parent="atelier">Forgemagie</button>
-      </div>
-    </div>
+    <button data-nav="commerce">Commerce 💼</button>
+    <button data-nav="flip">Achat-revente 🔁</button>
     <button data-tab="ressources">Prix des ressources 💰</button>
-    <button data-tab="inventaire">Inventaire 📦</button>
-    <button data-tab="hdv">Hôtel de vente 🏷️</button>
-    <div class="grp">
-      <button data-tab="calculateurs">Calculateurs 🧮 <span class="chev">▸</span></button>
-      <div class="sub">
-        <button data-sub="calc-runes" data-parent="calculateurs">Runes</button>
-        <button data-sub="calc-transc" data-parent="calculateurs">Runes songes</button>
-        <button data-sub="calc-alliances" data-parent="calculateurs">Alliances</button>
-        <button data-sub="calc-montures" data-parent="calculateurs">Montures</button>
-        <button data-sub="calc-parchemins" data-parent="calculateurs">Parchemins</button>
-      </div>
-    </div>
+    <button data-tab="calculateurs">Calculateurs 🧮</button>
     <button data-tab="sauvegarde">Synchronisation et Sauvegarde 💾</button>
   </nav>
   <span id="curTab"></span>
 </header>
+<div id="calcbar" class="subbar" role="navigation" aria-label="Calculateurs">
+  <button type="button" data-calcgo="calc-runes">Runes</button>
+  <button type="button" data-calcgo="calc-transc">Runes songes</button>
+  <button type="button" data-calcgo="calc-alliances">Alliances</button>
+  <button type="button" data-calcgo="calc-montures">Montures</button>
+  <button type="button" data-calcgo="calc-parchemins">Parchemins</button>
+</div>
+<div id="flowbar" role="navigation" aria-label="Navigation rapide">
+  <button type="button" data-go="investissements:iv-craft" data-f="craft"><span class="fi">🔨</span>Craft</button>
+  <button type="button" data-go="atelier:at-list" data-f="atelier"><span class="fi">🛠️</span>Atelier<span class="fb" hidden></span></button>
+  <button type="button" data-go="inventaire" data-f="inventaire"><span class="fi">📦</span>Inventaire<span class="fb" hidden></span></button>
+  <button type="button" data-go="hdv" data-f="hdv"><span class="fi">🏷️</span>HDV<span class="fb" hidden></span></button>
+</div>
 
 <main>
   <div id="stkAlerte" class="stk-alerte" hidden role="alert">⚠️ Enregistrement sur le disque impossible : serveur.py est-il toujours lancé ? Tes modifications restent dans le navigateur en attendant.</div>
@@ -153,12 +143,6 @@
       <div class="msg" id="ivSaveMsg" style="margin-bottom:0"></div>
     </div>
 
-    <div class="navlinks" style="margin-top:4px">
-      <button class="btn-s alt" data-go="atelier:at-list">🛠️ Aller à l'atelier</button>
-      <button class="btn-s alt" data-go="atelier:at-list:atShopSec">🛒 Faire ses courses</button>
-      <button class="btn-s alt" data-go="atelier:at-fm">🪄 Forgemager</button>
-    </div>
-
     </div><!-- /iv-craft -->
 
     <div class="ivpane" id="iv-flip">
@@ -221,10 +205,7 @@
   <section id="inventaire">
     <h2>Inventaire 📦</h2>
     <p class="opt" style="margin-top:0">Tes crafts, pas encore en vente. Forgemage-les un par un, fixe le prix de vente (bénéfice estimé taxe de 2 % déduite), puis mets-les en vente.</p>
-    <div class="navlinks">
-      <button class="btn-s alt" data-go="atelier:at-list">🛠️ Voir mon atelier</button>
-      <button class="btn-s alt" data-go="atelier:at-fm">🪄 Forgemagie</button>
-    </div>
+    <div class="navlinks"><button class="btn-s alt" data-go="atelier:at-fm">🪄 Forgemager un objet</button></div>
     <div class="msg" id="invMsg"></div>
     <div id="hdvInv"></div>
   </section>
@@ -233,7 +214,7 @@
     <h2>Atelier 🛠️</h2>
 
     <div class="atpane active" id="at-list">
-      <div class="navlinks"><button class="btn-s alt" data-go="inventaire">📦 Voir mon inventaire</button></div>
+      <div class="navlinks"><button class="btn-s alt" data-go="atelier:at-fm">🪄 Forgemagie</button></div>
     <div class="iv-sec">
       <div class="section-title">Objets à fabriquer</div>
       <div id="atItems"></div>
@@ -254,7 +235,7 @@
     </div><!-- /at-list -->
 
     <div class="atpane" id="at-fm">
-      <div class="navlinks"><button class="btn-s alt" data-go="inventaire">📦 Voir mon inventaire</button></div>
+      <div class="navlinks"><button class="btn-s alt" data-go="atelier:at-list">🛠️ Liste de courses</button></div>
       <div class="iv-sec">
         <div class="section-title">🪄 Forgemagie</div>
         <label class="field">
@@ -514,7 +495,6 @@
 
   <section id="hdv">
     <h2>Hôtel de vente 🏷️</h2>
-    <div class="navlinks"><button class="btn-s alt" data-go="inventaire">📦 Voir mon inventaire</button></div>
     <p class="opt" style="margin-top:0" id="hdvInfo"></p>
     <div class="msg" id="hdvMsg" style="margin:0 0 12px"></div>
     <div id="hdvList"></div>

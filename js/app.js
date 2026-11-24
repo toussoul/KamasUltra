@@ -8,6 +8,55 @@ function navOpen(open) {
   document.getElementById('burger').setAttribute('aria-expanded', open ? 'true' : 'false');
 }
 // Sous-menus : ouvre le groupe de l'onglet actif, repère la page affichée
+// Barre de raccourcis Craft / Atelier / Inventaire / HDV, avec comptages
+function flowSync() {
+  var bar = document.getElementById('flowbar');
+  if (!bar) return;
+  var cur = document.querySelector('section.active');
+  var id = cur ? cur.id : '';
+  var pane = document.querySelector('.ivpane.active');
+  var inFlow = id === 'investissements' || id === 'atelier' || id === 'inventaire' || id === 'hdv';
+  bar.classList.toggle('on', inFlow);
+  var curKey = id === 'investissements' ? (pane && pane.id === 'iv-craft' ? 'craft' : '') : id;
+  bar.querySelectorAll('button').forEach(function (b) { b.classList.toggle('cur', b.dataset.f === curKey); });
+  var inv = 0, listed = 0, at = 0;
+  try {
+    hdvEntries().forEach(function (e) { if (isInv(e)) inv++; else if (isListed(e) && !e.it.sale) listed++; });
+    atSaved().forEach(function (it) { at += atQty(it.qty); });
+  } catch (e) {}
+  var counts = { atelier: at, inventaire: inv, hdv: listed };
+  Object.keys(counts).forEach(function (k) {
+    var fb = bar.querySelector('[data-f="' + k + '"] .fb');
+    if (!fb) return;
+    fb.hidden = !counts[k];
+    fb.textContent = counts[k] > 99 ? '99+' : counts[k];
+  });
+  // Menu latéral : Commerce / Achat-revente
+  var flip = id === 'investissements' && pane && pane.id === 'iv-flip';
+  var inCommerce = inFlow && !flip;
+  document.querySelectorAll('#nav [data-nav]').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.nav === 'commerce' ? inCommerce : flip);
+  });
+  if (inCommerce) {
+    var spec = id === 'investissements' ? 'investissements:iv-craft' : id === 'atelier' ? 'atelier:' + ((document.querySelector('.atpane.active') || {}).id || 'at-list') : id;
+    try { localStorage.setItem('ku_lastcom', spec); } catch (e) {}
+  }
+  // Barre des calculateurs
+  var cb = document.getElementById('calcbar'), cc = document.querySelector('.calc.active');
+  if (cb) {
+    cb.classList.toggle('on', id === 'calculateurs');
+    cb.querySelectorAll('button').forEach(function (b) { b.classList.toggle('cur', !!cc && b.dataset.calcgo === cc.id); });
+  }
+  // Fil d'Ariane
+  var names = { investissements: flip ? 'Achat-revente 🔁' : 'Commerce 💼 › Craft', atelier: 'Commerce 💼 › Atelier', inventaire: 'Commerce 💼 › Inventaire', hdv: 'Commerce 💼 › HDV' };
+  var crumb = names[id];
+  if (id === 'calculateurs' && cc) { var cbtn = cb && cb.querySelector('[data-calcgo="' + cc.id + '"]'); crumb = 'Calculateurs 🧮' + (cbtn ? ' › ' + cbtn.textContent : ''); }
+  var ct = document.getElementById('curTab');
+  if (crumb && ct) ct.textContent = crumb;
+  var h = document.querySelector('header');
+  if (h) document.documentElement.style.setProperty('--hh', h.offsetHeight + 'px');
+}
+window.addEventListener('resize', flowSync);
 function navSync(name) {
   document.querySelectorAll('#nav .grp').forEach(function (g) {
     if (name) g.classList.toggle('open', g.querySelector('[data-tab]').dataset.tab === name);
@@ -19,6 +68,7 @@ function navSync(name) {
   });
   var cur = document.querySelector('#nav [data-tab].active'), sub = document.querySelector('#nav [data-sub].active');
   if (cur) document.getElementById('curTab').textContent = cur.textContent.replace('▸', '').trim() + (sub ? ' › ' + sub.textContent.trim() : '');
+  flowSync();
 }
 function showTab(name) {
   document.querySelectorAll('section').forEach(function (s) {
@@ -488,7 +538,7 @@ function ivRenderRows() {
   iv.rows.forEach(function (r, i) {
     h += '<tr>' +
       '<td><div class="rname">' + imgTag(r.icon, 'ri') +
-      '<input type="text" data-i="' + i + '" data-f="name" placeholder="Ressource" value="' + esc(r.name) + '" style="min-width:140px">' + copyBtn('') + '</div></td>' +
+      '<input type="text" data-i="' + i + '" data-f="name" placeholder="Ressource" value="' + esc(r.name) + '" style="min-width:110px">' + copyBtn('') + '</div></td>' +
       '<td><input type="text" data-num inputmode="decimal" min="0" step="any" data-i="' + i + '" data-f="qty" placeholder="0" value="' + esc(fmtField(r.qty)) + '" style="min-width:64px"></td>' +
       '<td><input type="text" data-num inputmode="decimal" min="0" step="any" data-i="' + i + '" data-f="price" placeholder="0" value="' + esc(fmtField(r.price)) + '">' +
       '<small class="iv-pdate" data-pd="' + i + '"></small></td>' +
@@ -1007,17 +1057,36 @@ flEl.clear.addEventListener('click', function () {
   flApply({});
   setMsg(flEl.saveMsg, '');
 });
+document.querySelectorAll('#nav [data-nav]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var spec = 'investissements:iv-flip';
+    if (b.dataset.nav === 'commerce') {
+      try { spec = localStorage.getItem('ku_lastcom') || ''; } catch (e) {}
+      if (!/^(investissements:iv-craft|atelier(:at-(list|fm))?|inventaire|hdv)$/.test(spec)) spec = 'investissements:iv-craft';
+    }
+    goTo(spec);
+    navOpen(false);
+    window.scrollTo(0, 0);
+  });
+});
+document.querySelectorAll('#calcbar [data-calcgo]').forEach(function (b) {
+  b.addEventListener('click', function () { showCalc(b.dataset.calcgo); window.scrollTo(0, 0); });
+});
+function goTo(spec) {
+  var parts = spec.split(':'), tab = parts[0], pane = parts[1];
+  if (pane) {   // la sous-page d'abord, puis l'onglet : l'état mémorisé reste cohérent
+    if (pane.indexOf('at-') === 0) showAtPane(pane);
+    else if (pane.indexOf('iv-') === 0) showIvPane(pane);
+    else showCalc(pane);
+  }
+  showTab(tab);
+}
 // ---------- Boutons de navigation entre pages : data-go="onglet[:page[:ancre]]" ----------
 document.addEventListener('click', function (e) {
   var b = e.target.closest ? e.target.closest('[data-go]') : null;
   if (!b) return;
   var parts = b.dataset.go.split(':'), tab = parts[0], pane = parts[1], anchor = parts[2];
-  showTab(tab);
-  if (pane) {
-    if (pane.indexOf('at-') === 0) showAtPane(pane);
-    else if (pane.indexOf('iv-') === 0) showIvPane(pane);
-    else showCalc(pane);
-  }
+  goTo(tab + (pane ? ':' + pane : ''));
   var target = anchor ? document.getElementById(anchor) : null;
   if (target && target.offsetParent) target.scrollIntoView({ behavior: 'smooth', block: 'start' }); else window.scrollTo(0, 0);
 });
@@ -1596,6 +1665,7 @@ function dashRender() {
 document.getElementById('goHdv').addEventListener('click', function () { showTab('hdv'); window.scrollTo(0, 0); });
 
 function refreshViews() {
+  flowSync();
   rsRender();
   ivRefreshPrices();
   hdvRender();
@@ -2428,7 +2498,7 @@ var QR = (function () {
 // ---------- Transfert vers un autre appareil par QR code ----------
 // Les données sont compressées, découpées en parties ; chaque QR code contient un lien du site avec une partie.
 // L'appareil qui scanne n'a besoin d'aucune application : l'appareil photo ouvre le lien, le site assemble les parties.
-var SYNC_SKIP = { ku_iv_draft: 1, ku_fl_draft: 1, ku_fm_draft: 1, ku_fm_sel: 1, ku_atp: 1, ku_tab: 1, ku_ivp: 1, ku_calc: 1, ku_period: 1 };
+var SYNC_SKIP = { ku_iv_draft: 1, ku_fl_draft: 1, ku_fm_draft: 1, ku_fm_sel: 1, ku_atp: 1, ku_tab: 1, ku_ivp: 1, ku_calc: 1, ku_period: 1, ku_lastcom: 1 };
 var SYNC_CHUNK = 350;
 var sync = { urls: [], i: 0 };
 
