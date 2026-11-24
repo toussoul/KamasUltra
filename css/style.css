@@ -146,6 +146,8 @@
   .cp.ok { border-color: var(--accent); color: var(--accent); }
   .k.rn { display: flex; align-items: center; gap: 8px; }
   .k.rn img { width: 28px; height: 28px; object-fit: contain; flex: none; }
+  .ptable table.memo td:not(:first-child), .ptable table.memo th:not(:first-child) { text-align: right; }
+  .ptable table.memo tr.memo-t td { font-weight: 700; border-top: 2px solid var(--border); }
   .ptable table.tt { min-width: 0; }
   .ptable table.tt td, .ptable table.tt th { white-space: nowrap; padding-left: 4px; padding-right: 4px; }
   .ptable table.tt input { min-width: 0; width: 84px; }
@@ -307,6 +309,35 @@
   .at-cost small { display: block; font-size: 11px; color: var(--muted); }
   .at-tot { display: flex; justify-content: space-between; padding: 10px 4px 0; font-weight: 600; flex-wrap: wrap; gap: 6px; }
   .btn-s.alt:hover { background: #3a3a3a; }
+
+  /* ===== Style commun : panneaux et cartes bien distincts (comme les encadrés Parchemins) ===== */
+  #dashboard { --sc: #9b7fd6; }
+  #investissements { --sc: #d9a441; }
+  #atelier { --sc: #e0813a; }
+  #inventaire { --sc: #4fb3a5; }
+  #hdv { --sc: #5cb85c; }
+  #ressources { --sc: #d9a441; }
+  #calculateurs { --sc: #4a90c2; }
+  #sauvegarde { --sc: #4a90c2; }
+  #feedback { --sc: #d96f9b; }
+  section h2 { color: var(--sc, var(--text)); }
+  .iv-sec, .hdv-item, .saved-item { border-left: 5px solid var(--sc, var(--accent)); box-shadow: 0 1px 0 rgba(255,255,255,.04) inset; }
+  .iv-sec > .section-title, .iv-sec .section-title:first-child { color: var(--sc, var(--accent)); font-size: 13px; }
+  .iv-sec .iv-sec { border-left-width: 1px; }
+  .card { border-left: 4px solid var(--sc, var(--accent)); background: #202226; }
+  .card .k { font-size: 14px; font-weight: 600; color: var(--sc, var(--muted)); }
+  .psec .card { border-left-color: var(--pc); }
+  .psec .card .k { color: var(--pc); }
+  .hdv-item .n, .saved-item .n { font-weight: 700; }
+  /* Calculateurs : chacun dans un encadré coloré avec son titre */
+  .calc.active:not(#calc-parchemins) { padding: 16px 14px; border: 1px solid var(--pc); border-left-width: 5px; border-radius: 12px; background: rgba(255,255,255,.03); }
+  .calc.active:not(#calc-parchemins)::before { display: block; margin-bottom: 14px; font-size: 20px; font-weight: 700; color: var(--pc); }
+  #calc-runes { --pc: #d96f9b; } #calc-runes::before { content: '🔮 Runes'; }
+  #calc-transc { --pc: #4fb3a5; } #calc-transc::before { content: '🌙 Runes songes'; }
+  #calc-alliances { --pc: #e0813a; } #calc-alliances::before { content: '💍 Alliances'; }
+  #calc-montures { --pc: #5cb85c; } #calc-montures::before { content: '🐎 Montures'; }
+  #calc-runes .card, #calc-transc .card, #calc-alliances .card, #calc-montures .card { border-left-color: var(--pc); }
+  #calc-runes .card .k, #calc-transc .card .k, #calc-alliances .card .k, #calc-montures .card .k { color: var(--pc); }
 
 /* ---------- Stockage (serveur local ou navigateur seul) ---------- */
 .si-disque, .si-navigateur { display: none; }
