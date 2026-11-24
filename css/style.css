@@ -142,6 +142,10 @@
   .ptable th small { display: block; color: var(--muted); font-weight: 400; }
   .psec { margin-top: 24px; padding: 14px; border: 1px solid var(--pc); border-left-width: 5px; border-radius: 12px; background: rgba(255,255,255,.03); }
   .psec-h { margin: 0 0 12px; font-size: 20px; color: var(--pc); }
+  .cp { flex: none; border: 1px solid var(--border); background: var(--field); color: var(--text); border-radius: 8px; width: 30px; height: 30px; padding: 0; font-size: 15px; line-height: 1; cursor: pointer; }
+  .cp.ok { border-color: var(--accent); color: var(--accent); }
+  .k.rn { display: flex; align-items: center; gap: 8px; }
+  .k.rn img { width: 28px; height: 28px; object-fit: contain; flex: none; }
   .ptable table.tt { min-width: 0; }
   .ptable table.tt td, .ptable table.tt th { white-space: nowrap; padding-left: 4px; padding-right: 4px; }
   .ptable table.tt input { min-width: 0; width: 84px; }

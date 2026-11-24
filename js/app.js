@@ -315,6 +315,11 @@ function pApplyFilters() {
 pfS.addEventListener('change', function () { pOn.s = pfS.value === '' ? null : +pfS.value; computeParchemins(); });
 pfE.addEventListener('change', function () { pOn.e = pfE.value === '' ? null : +pfE.value; computeParchemins(); });
 
+function pName(s, e) {
+  var pre = ['Petit Parchemin', 'Parchemin', 'Grand Parchemin', 'Puissant Parchemin'][s];
+  var st = ['de Vitalité', 'de Sagesse', "d'Intelligence", "d'Agilité", 'de Force', 'de Chance'][e];
+  return pre + ' ' + st;
+}
 function pRender(ck, pTop, pCats) {
   var factor = 1; // prix HDV pris tels quels, aucune déduction
   var scores = P_ELEMS.map(function () { return P_SIZES.map(function () { return null; }); });
@@ -335,7 +340,7 @@ function pRender(ck, pTop, pCats) {
   pTop.innerHTML = best
     ? '<div class="card"><div class="v">' + fmtInt(best.sc) + '</div></div>' +
       '<div class="card"><div class="k">' + P_SIZES[best.s].n + ' ' + P_SIZES[best.s].e + '</div>' +
-      '<div class="v" style="font-size:20px">' + P_ELEMS[best.e].n + ' ' + P_ELEMS[best.e].e + '</div></div>'
+      '<div class="v" style="font-size:20px">' + P_ELEMS[best.e].n + ' ' + P_ELEMS[best.e].e + '</div>' + copyBtn(pName(best.s, best.e)) + '</div>'
     : '<div class="card"><div class="k">Saisis au moins un prix</div><div class="v">–</div></div>';
 
   // Meilleur élément pour chaque taille
@@ -352,7 +357,7 @@ function pRender(ck, pTop, pCats) {
     if (!visS(s)) return;
     cats += '<div class="card"><div class="k">' + sz.n + ' ' + sz.e + '</div>' +
       '<div class="v">' + (b ? fmtInt(b.sc) : '–') + '</div>' +
-      '<div class="sub-line">' + (b ? P_ELEMS[b.e].n + ' ' + P_ELEMS[b.e].e : '') + '</div></div>';
+      '<div class="sub-line">' + (b ? P_ELEMS[b.e].n + ' ' + P_ELEMS[b.e].e : '') + '</div>' + (b ? copyBtn(pName(s, b.e)) : '') + '</div>';
   });
   pCats.innerHTML = cats;
 
@@ -380,18 +385,40 @@ computeParchemins();
 
 // ===== Runes songes : seuil de rentabilité = (quantité de Reflets × prix du reflet) ÷ (1 − taxe 2 %) =====
 var T_RUNES = [
-  { n: 'Do So', q: 120 }, { n: 'Do Dist', q: 100 }, { n: 'Do Arme', q: 20 },
-  { n: 'Do Mélée', q: 80 }, { n: 'Ré Dist', q: 60 }, { n: 'Ré Mélée', q: 40 }
+  { n: 'Do So', q: 120, full: 'Rune Do Per So' }, { n: 'Do Dist', q: 100, full: 'Rune Do Per Di' },
+  { n: 'Do Arme', q: 20, full: 'Rune Do Per Ar' }, { n: 'Do Mélée', q: 80, full: 'Rune Do Per Mé' },
+  { n: 'Ré Dist', q: 60, full: 'Rune Ré Per Di' }, { n: 'Ré Mélée', q: 40, full: 'Rune Ré Per Mé' }
 ];
 var tReflet = document.getElementById('tReflet');
 var tGrid = document.getElementById('tGrid');
+// Icônes récupérées sur DofusDB à partir du nom de la rune, puis gardées en cache (kc_icons)
+var tIcons = {};
+try { tIcons = JSON.parse(localStorage.getItem('kc_icons') || '{}') || {}; } catch (e) {}
+function tLoadIcons() {
+  T_RUNES.forEach(function (r) {
+    if (tIcons[r.full]) return;
+    var base = API + '/items?lang=fr&$limit=5&$select[]=id&$select[]=name&$select[]=iconId';
+    var rx = '^' + r.full.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$';
+    getJson(base + '&name.fr[$regex]=' + encodeURIComponent(rx) + '&name.fr[$options]=i').then(function (res) {
+      var list = res && res.data ? res.data : (Array.isArray(res) ? res : []);
+      if (!list.length) return getJson(base + '&slug.fr[$regex]=' + encodeURIComponent('^' + slugify(r.full) + '$')).then(function (r2) { return r2 && r2.data ? r2.data : []; });
+      return list;
+    }).then(function (list) {
+      if (list && list[0] && list[0].iconId) {
+        tIcons[r.full] = list[0].iconId;
+        try { localStorage.setItem('kc_icons', JSON.stringify(tIcons)); } catch (e) {}
+        computeTransc();
+      }
+    }).catch(function () {});
+  });
+}
 function computeTransc() {
   var v = parseFloat(String(tReflet.value).replace(/\s/g, '').replace(',', '.'));
   var ok = isFinite(v) && v > 0;
   tGrid.innerHTML = T_RUNES.map(function (r) {
     var craft = ok ? v * r.q : null;
-    return '<div class="card"><div class="k" style="font-size:18px;font-weight:700;color:var(--accent);margin-bottom:4px">' + r.n + '</div>' +
-      '<div class="v">' + (ok ? fmtInt(Math.ceil(craft / (1 - TAX))) + ' K' : '–') + '</div></div>';
+    return '<div class="card"><div class="k rn" style="font-size:18px;font-weight:700;color:var(--accent);margin-bottom:4px">' + imgTag(tIcons[r.full], '') + '<span style="white-space:nowrap">' + r.n + '</span></div>' +
+      '<div class="v" style="display:flex;align-items:center;justify-content:space-between;gap:6px"><span style="white-space:nowrap;font-size:22px">' + (ok ? fmtInt(Math.ceil(craft / (1 - TAX))) + ' K' : '–') + '</span>' + copyBtn(r.full) + '</div></div>';
   }).join('');
   try { localStorage.setItem('ku_transc', JSON.stringify({ reflet: tReflet.value })); } catch (e) {}
 }
@@ -401,6 +428,7 @@ try {
 } catch (e) {}
 tReflet.addEventListener('input', computeTransc);
 computeTransc();
+setTimeout(function () { computeTransc(); tLoadIcons(); }, 0); // après la définition de API
 
 // ---------- Investissements (rentabilité d'un craft) ----------
 var API = 'https://api.dofusdb.fr';
@@ -460,7 +488,7 @@ function ivRenderRows() {
   iv.rows.forEach(function (r, i) {
     h += '<tr>' +
       '<td><div class="rname">' + imgTag(r.icon, 'ri') +
-      '<input type="text" data-i="' + i + '" data-f="name" placeholder="Ressource" value="' + esc(r.name) + '" style="min-width:140px"></div></td>' +
+      '<input type="text" data-i="' + i + '" data-f="name" placeholder="Ressource" value="' + esc(r.name) + '" style="min-width:140px">' + copyBtn('') + '</div></td>' +
       '<td><input type="text" data-num inputmode="decimal" min="0" step="any" data-i="' + i + '" data-f="qty" placeholder="0" value="' + esc(fmtField(r.qty)) + '" style="min-width:64px"></td>' +
       '<td><input type="text" data-num inputmode="decimal" min="0" step="any" data-i="' + i + '" data-f="price" placeholder="0" value="' + esc(fmtField(r.price)) + '">' +
       '<small class="iv-pdate" data-pd="' + i + '"></small></td>' +
@@ -584,6 +612,37 @@ ivEl.name.addEventListener('input', function () {
 });
 
 // ----- Import depuis DofusDB -----
+// Bouton « copier le nom » (pour le coller dans la recherche de l'HDV en jeu)
+function copyBtn(name) {
+  return '<button type="button" class="cp" data-copy="' + esc(name || '') + '" title="Copier le nom pour l\'HDV" aria-label="Copier le nom">📋</button>';
+}
+function copyText(t) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(t).catch(function () { return copyFallback(t); });
+  }
+  return Promise.resolve(copyFallback(t));
+}
+function copyFallback(t) {
+  var ta = document.createElement('textarea');
+  ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); } catch (e) {}
+  document.body.removeChild(ta);
+}
+document.addEventListener('click', function (ev) {
+  var b = ev.target.closest ? ev.target.closest('.cp[data-copy]') : null;
+  if (!b) return;
+  ev.preventDefault(); ev.stopPropagation();
+  var name = b.dataset.copy;
+  if (!name && b.previousElementSibling && 'value' in b.previousElementSibling) name = b.previousElementSibling.value;
+  name = String(name || '').trim();
+  if (!name) return;
+  copyText(name).then(function () {
+    b.textContent = '✓'; b.classList.add('ok');
+    setTimeout(function () { b.textContent = '📋'; b.classList.remove('ok'); }, 1200);
+  });
+}, true);
+
 function getJson(url) {
   return fetch(url).then(function (r) {
     if (!r.ok) throw new Error('erreur ' + r.status);
@@ -1864,7 +1923,7 @@ function atRender() {
     var sub = 'Besoin : ' + fmtInt(t.qty) + (have > 0 ? ' · stock : ' + fmtInt(have) : '') +
       (t.price > 0 && need > 0 ? ' · ' + fmtInt(cost) + ' K' : '');
     return '<div class="at-row' + (isDone ? ' done' : '') + '"><input type="checkbox" data-at="chk" data-k="' + esc(t.key) + '"' + (isDone ? ' checked' : '') + (need === 0 ? ' disabled' : '') + '>' +
-      imgTag(t.icon, '') + '<div class="at-name">' + esc(t.name) + '<small>' + sub + '</small></div>' +
+      imgTag(t.icon, '') + '<div class="at-name">' + esc(t.name) + '<small>' + sub + '</small></div>' + copyBtn(t.name) +
       '<input class="at-stock" type="text" inputmode="numeric" placeholder="Stock" aria-label="Stock de ' + esc(t.name) + '" data-at="stock" data-k="' + esc(t.key) + '" value="' + (have > 0 ? esc(fmtInt(have)) : '') + '">' +
       '<div class="at-q">× ' + fmtInt(need) + '</div></div>';
   }).join('') + (all > 0 ? '<div class="at-tot"><span>Coût total estimé : ' + fmtInt(all) + ' K</span><span>Reste à acheter : ' + fmtInt(left) + ' K</span></div>' : '')
