@@ -316,7 +316,7 @@ pfS.addEventListener('change', function () { pOn.s = pfS.value === '' ? null : +
 pfE.addEventListener('change', function () { pOn.e = pfE.value === '' ? null : +pfE.value; computeParchemins(); });
 
 function pRender(ck, pTop, pCats) {
-  var factor = 1;
+  var factor = 1; // prix HDV pris tels quels, aucune déduction
   var scores = P_ELEMS.map(function () { return P_SIZES.map(function () { return null; }); });
   pInputs.forEach(function (inp) {
     var e = +inp.dataset.e, s = +inp.dataset.s;
