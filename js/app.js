@@ -104,8 +104,8 @@ function compute() {
   var coutPA = 3 * base;
   var coutRA = el.mode.value === 'pa' ? 3 * pa : 9 * base;
 
-  var netPA = pa * (1 - TAX) - coutPA;
-  var netRA = ra * (1 - TAX) - coutRA;
+  var netPA = pa - coutPA;
+  var netRA = ra - coutRA;
 
   // Comparaison à quantité égale : 1 rune RA demande autant de matière que 3 runes PA.
   // Comparer 1 PA à 1 RA désignait la RA dès que son bénéfice dépassait celui d'une seule PA.
@@ -116,8 +116,8 @@ function compute() {
   el.net.className = 'v ' + (best.v >= 0 ? 'pos' : 'neg');
 
   el.detail.innerHTML =
-    row('3 × PA', 3 * coutPA, 3 * pa * (1 - TAX), lotPA) +
-    row('1 × RA', coutRA, ra * (1 - TAX), netRA);
+    row('3 × PA', 3 * coutPA, 3 * pa, lotPA) +
+    row('1 × RA', coutRA, ra, netRA);
 
   try {
     localStorage.setItem('ku_runes', JSON.stringify({
@@ -248,7 +248,7 @@ function computeMontures() {
     // Prix de vente minimal pour ne pas perdre d'argent après la taxe de 2 %,
     // arrondi à la centaine supérieure : arrondir en dessous donnait un seuil légèrement à perte.
     var seuil = Math.ceil((prix * gen) / (1 - TAX) / 100) * 100;
-    html += '<div class="card"><div class="k">Gen ' + gen + '</div><div class="v">' +
+    html += '<div class="card"><div class="k" style="font-size:18px;font-weight:700;color:var(--accent);margin-bottom:4px">Gen ' + gen + '</div><div class="v">' +
       fmtInt(seuil) + '</div></div>';
   }
   mGrid.innerHTML = html;
@@ -268,34 +268,32 @@ var P_ELEMS = [
   { n: 'Agilité', e: '🟢' }, { n: 'Force', e: '🟤' }, { n: 'Chance', e: '🔵' }
 ];
 var P_SIZES = [
-  { n: 'Petit', e: '👏', c: 20 }, { n: 'Normal', e: '👌', c: 60 },
-  { n: 'Grand', e: '💪', c: 140 }, { n: 'Puissant', e: '🏋️', c: 340 }
+  { n: 'Petit', e: '👏', c: 20, g: 10 }, { n: 'Normal', e: '👌', c: 60, g: 30 },
+  { n: 'Grand', e: '💪', c: 140, g: 70 }, { n: 'Puissant', e: '🏋️', c: 340, g: 170 }
 ];
 
 var pTable = document.getElementById('pTable');
-var pScores = document.getElementById('pScores');
 var pTop = document.getElementById('pTop');
 var pCats = document.getElementById('pCats');
-var pNet = document.getElementById('pNet');
 
 // Construit le tableau de saisie (éléments en lignes, tailles en colonnes)
 var head = '<thead><tr><th></th>';
 P_SIZES.forEach(function (s) {
-  head += '<th>' + s.n + ' ' + s.e + '<small>' + s.c + ' avitons</small></th>';
+  head += '<th data-col="' + P_SIZES.indexOf(s) + '">' + s.n + ' ' + s.e + '</th>';
 });
 head += '</tr></thead>';
 var body = '<tbody>';
 P_ELEMS.forEach(function (el_, i) {
-  body += '<tr><td>' + el_.n + ' ' + el_.e + '</td>';
+  body += '<tr data-row="' + i + '"><td>' + el_.n + ' ' + el_.e + '</td>';
   P_SIZES.forEach(function (s, j) {
-    body += '<td><input type="text" data-num inputmode="decimal" min="0" step="any" ' +
+    body += '<td data-col="' + j + '"><input type="text" data-num inputmode="decimal" min="0" step="any" ' +
       'placeholder="—" data-e="' + i + '" data-s="' + j + '"></td>';
   });
   body += '</tr>';
 });
 body += '</tbody>';
 pTable.innerHTML = head + body;
-var pInputs = pTable.querySelectorAll('input');
+var pInputs = pTable.querySelectorAll('input[data-num]');
 
 function priceOf(input) {
   if (input.value === '') return null;
@@ -303,22 +301,34 @@ function priceOf(input) {
   return isFinite(v) && v > 0 ? v : null;
 }
 
-function computeParchemins() {
-  var factor = pNet.checked ? 1 - TAX : 1;
-  var scores = P_ELEMS.map(function () { return P_SIZES.map(function () { return null; }); });
-  var saved = [];
+// Filtres : menus déroulants (un seul type et/ou une seule statistique) ; les autres prix restent enregistrés
+var pOn = { s: null, e: null };
+function visS(s) { return pOn.s === null || pOn.s === s; }
+function visE(e) { return pOn.e === null || pOn.e === e; }
+var pfS = document.getElementById('pfS'), pfE = document.getElementById('pfE');
+pfS.innerHTML = '<option value="">Tous les types</option>' + P_SIZES.map(function (x, i) { return '<option value="' + i + '">' + x.n + ' ' + x.e + '</option>'; }).join('');
+pfE.innerHTML = '<option value="">Toutes les statistiques</option>' + P_ELEMS.map(function (x, i) { return '<option value="' + i + '">' + x.n + ' ' + x.e + '</option>'; }).join('');
+function pApplyFilters() {
+  pTable.querySelectorAll('[data-col]').forEach(function (n) { n.classList.toggle('off', !visS(+n.dataset.col)); });
+  pTable.querySelectorAll('[data-row]').forEach(function (n) { n.classList.toggle('off', !visE(+n.dataset.row)); });
+}
+pfS.addEventListener('change', function () { pOn.s = pfS.value === '' ? null : +pfS.value; computeParchemins(); });
+pfE.addEventListener('change', function () { pOn.e = pfE.value === '' ? null : +pfE.value; computeParchemins(); });
 
+function pRender(ck, pTop, pCats) {
+  var factor = 1;
+  var scores = P_ELEMS.map(function () { return P_SIZES.map(function () { return null; }); });
   pInputs.forEach(function (inp) {
     var e = +inp.dataset.e, s = +inp.dataset.s;
     var p = priceOf(inp);
-    if (p !== null) scores[e][s] = p * factor / P_SIZES[s].c;
-    saved.push(inp.value);
+    if (p !== null) scores[e][s] = p * factor / P_SIZES[s][ck];
   });
-
   // Meilleur score global
   var best = null;
   scores.forEach(function (row, e) {
+    if (!visE(e)) return;
     row.forEach(function (sc, s) {
+      if (!visS(s)) return;
       if (sc !== null && (best === null || sc > best.sc)) best = { sc: sc, e: e, s: s };
     });
   });
@@ -334,33 +344,28 @@ function computeParchemins() {
   P_SIZES.forEach(function (sz, s) {
     var b = null;
     P_ELEMS.forEach(function (_, e) {
+      if (!visE(e)) return;
       var sc = scores[e][s];
       if (sc !== null && (b === null || sc > b.sc)) b = { sc: sc, e: e };
     });
     bestPerSize.push(b);
+    if (!visS(s)) return;
     cats += '<div class="card"><div class="k">' + sz.n + ' ' + sz.e + '</div>' +
       '<div class="v">' + (b ? fmtInt(b.sc) : '–') + '</div>' +
       '<div class="sub-line">' + (b ? P_ELEMS[b.e].n + ' ' + P_ELEMS[b.e].e : '') + '</div></div>';
   });
   pCats.innerHTML = cats;
 
-  // Tableau détaillé de tous les scores (meilleur de chaque colonne en vert)
-  var t = '<thead><tr><th></th>';
-  P_SIZES.forEach(function (s) { t += '<th>' + s.n + ' ' + s.e + '</th>'; });
-  t += '</tr></thead><tbody>';
-  P_ELEMS.forEach(function (el_, e) {
-    t += '<tr><td>' + el_.n + ' ' + el_.e + '</td>';
-    P_SIZES.forEach(function (_, s) {
-      var sc = scores[e][s];
-      var isBest = bestPerSize[s] && bestPerSize[s].e === e && sc !== null;
-      t += '<td class="' + (isBest ? 'pos' : '') + '">' + (sc === null ? '–' : fmtInt(sc)) + '</td>';
-    });
-    t += '</tr>';
-  });
-  pScores.innerHTML = t + '</tbody>';
+}
 
+function computeParchemins() {
+  pApplyFilters();
+  var saved = [];
+  pInputs.forEach(function (inp) { saved.push(inp.value); });
+  pRender('c', pTop, pCats);
+  pRender('g', document.getElementById('pTopG'), document.getElementById('pCatsG'));
   try {
-    localStorage.setItem('ku_parchemins', JSON.stringify({ prices: saved, net: pNet.checked }));
+    localStorage.setItem('ku_parchemins', JSON.stringify({ prices: saved, net: true }));
   } catch (e) {}
 }
 
@@ -368,12 +373,34 @@ try {
   var sp = JSON.parse(localStorage.getItem('ku_parchemins') || 'null');
   if (sp) {
     pInputs.forEach(function (inp, i) { if (sp.prices && sp.prices[i] !== undefined) inp.value = sp.prices[i]; });
-    pNet.checked = sp.net !== false;
   }
 } catch (e) {}
 pInputs.forEach(function (inp) { inp.addEventListener('input', computeParchemins); });
-pNet.addEventListener('change', computeParchemins);
 computeParchemins();
+
+// ===== Runes songes : seuil de rentabilité = (quantité de Reflets × prix du reflet) ÷ (1 − taxe 2 %) =====
+var T_RUNES = [
+  { n: 'Do So', q: 120 }, { n: 'Do Dist', q: 100 }, { n: 'Do Arme', q: 20 },
+  { n: 'Do Mélée', q: 80 }, { n: 'Ré Dist', q: 60 }, { n: 'Ré Mélée', q: 40 }
+];
+var tReflet = document.getElementById('tReflet');
+var tGrid = document.getElementById('tGrid');
+function computeTransc() {
+  var v = parseFloat(String(tReflet.value).replace(/\s/g, '').replace(',', '.'));
+  var ok = isFinite(v) && v > 0;
+  tGrid.innerHTML = T_RUNES.map(function (r) {
+    var craft = ok ? v * r.q : null;
+    return '<div class="card"><div class="k" style="font-size:18px;font-weight:700;color:var(--accent);margin-bottom:4px">' + r.n + '</div>' +
+      '<div class="v">' + (ok ? fmtInt(Math.ceil(craft / (1 - TAX))) + ' K' : '–') + '</div></div>';
+  }).join('');
+  try { localStorage.setItem('ku_transc', JSON.stringify({ reflet: tReflet.value })); } catch (e) {}
+}
+try {
+  var st = JSON.parse(localStorage.getItem('ku_transc') || 'null');
+  if (st) tReflet.value = st.reflet || '';
+} catch (e) {}
+tReflet.addEventListener('input', computeTransc);
+computeTransc();
 
 // ---------- Investissements (rentabilité d'un craft) ----------
 var API = 'https://api.dofusdb.fr';

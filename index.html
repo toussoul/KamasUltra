@@ -38,6 +38,7 @@
       <button data-tab="calculateurs">Calculateurs 🧮 <span class="chev">▸</span></button>
       <div class="sub">
         <button data-sub="calc-runes" data-parent="calculateurs">Runes</button>
+        <button data-sub="calc-transc" data-parent="calculateurs">Runes songes</button>
         <button data-sub="calc-alliances" data-parent="calculateurs">Alliances</button>
         <button data-sub="calc-montures" data-parent="calculateurs">Montures</button>
         <button data-sub="calc-parchemins" data-parent="calculateurs">Parchemins</button>
@@ -364,7 +365,7 @@
     <details>
       <summary>Voir le détail du calcul</summary>
       <table>
-        <thead><tr><th>Rune</th><th>Coût</th><th>Vente après taxe (2 %)</th><th>Bénef net</th></tr></thead>
+        <thead><tr><th>Rune</th><th>Coût</th><th>Prix de vente</th><th>Bénef net</th></tr></thead>
         <tbody id="detail"></tbody>
       </table>
     </details>
@@ -470,27 +471,45 @@
         <table id="pTable"></table>
       </div>
 
-      <label class="check">
-        <input type="checkbox" id="pNet" checked>
-        Déduire la taxe de mise en vente (2 %)
-      </label>
+      <div class="opt" style="margin:10px 0 0">
+        Voir les résultats pour :<br>
+        <select id="pfS" style="margin:6px 6px 0 0"></select>
+        <select id="pfE" style="margin:6px 0 0 0"></select>
+      </div>
 
-      <div class="section-title" style="margin-top:22px">👑 Top rentabilité</div>
-      <div class="result" id="pTop"></div>
 
-      <div class="section-title" style="margin-top:22px">Par catégorie</div>
-      <div class="grid" id="pCats"></div>
+      <div class="psec" style="--pc:#d9a441">
+        <h3 class="psec-h">🐉 Avitons</h3>
+        <div class="section-title">👑 Top rentabilité</div>
+        <div class="result" id="pTop"></div>
+        <div class="section-title" style="margin-top:18px">Par catégorie</div>
+        <div class="grid" id="pCats"></div>
+      </div>
 
-      <details>
-        <summary>Voir tous les scores</summary>
-        <div class="ptable"><table id="pScores"></table></div>
-      </details>
-
-      <p class="opt" style="margin-top:14px">
-        Score = prix de vente (après taxe) ÷ coût en avitons. Plus il est élevé, plus le parchemin est rentable.
-      </p>
+      <div class="psec" style="--pc:#4fb3a5">
+        <h3 class="psec-h">🧬 Génétons</h3>
+        <div class="section-title">👑 Top rentabilité</div>
+        <div class="result" id="pTopG"></div>
+        <div class="section-title" style="margin-top:18px">Par catégorie</div>
+        <div class="grid" id="pCatsG"></div>
+      </div>
 
     </div><!-- /calc-parchemins -->
+
+    <div class="calc" id="calc-transc">
+      <div class="section-title">Runes songes</div>
+      <label class="field">
+        <span>Prix du Reflet onirique</span>
+        <div class="input-wrap">
+          <input id="tReflet" type="text" data-num inputmode="decimal" min="0" step="any" placeholder="0">
+          <span class="unit">K</span>
+        </div>
+      </label>
+
+      <div class="section-title" style="margin-top:22px">Seuil de rentabilité</div>
+      <div class="grid" id="tGrid"></div>
+      <p class="opt" style="margin:10px 0 0">Prix de mise en vente minimum pour être rentable, taxe de 2 % comprise.</p>
+    </div><!-- /calc-transc -->
   </section>
 
   <section id="hdv">
