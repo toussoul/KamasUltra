@@ -22,6 +22,7 @@
     <button data-tab="ressources">Prix des ressources 💰</button>
     <button data-tab="calculateurs">Calculateurs 🧮</button>
     <button data-tab="sauvegarde">Synchronisation et Sauvegarde 💾</button>
+    <button data-tab="feedback">Feedback 💬</button>
   </nav>
   <span id="curTab"></span>
 </header>
@@ -531,7 +532,7 @@
           un autre navigateur, tout ce que tu as enregistré <b>n'apparaît plus</b>.
         </p>
         <p class="expl" style="margin-bottom:0">
-          Transfère-les vers un autre appareil par QR code, ou garde <b>un fichier de sauvegarde</b> que tu
+          Transfère-les vers un autre appareil par lien, ou garde <b>un fichier de sauvegarde</b> que tu
           pourras recharger quand tu veux, ici ou ailleurs.
         </p>
       </div>
@@ -540,21 +541,11 @@
 
     <div class="iv-sec">
       <div class="section-title">📱 Transférer vers un autre appareil</div>
-      <p class="expl">Génère le QR code, puis scanne-le avec l'appareil photo de l'autre appareil : il ouvre le site et propose d'importer tes données.
-        S'il y a plusieurs QR codes, scanne-les à la suite.</p>
-      <p class="expl si-disque">Le QR code ouvre l'adresse de cette page. Avec le serveur local, un appareil du même réseau
+      <p class="expl">Copie un lien, envoie-le-toi (messagerie, e-mail) puis ouvre-le sur l'autre appareil : le site propose d'importer tes données.</p>
+      <p class="expl si-disque">Le lien ouvre l'adresse de cette page. Avec le serveur local, un appareil du même réseau
         voit déjà les mêmes données en ouvrant l'adresse « depuis le réseau local » : le transfert ne sert que pour
         copier tes données vers une autre installation, et il ne fonctionne pas si cette page est ouverte en 127.0.0.1.</p>
-      <button class="btn bk-btn" id="syncGen">📷 Générer le QR code</button>
-      <div id="syncBox" hidden>
-        <div class="sync-qr" id="syncQr"></div>
-        <div class="sync-nav">
-          <button class="btn-s alt" id="syncPrev" aria-label="QR précédent">‹</button>
-          <span id="syncPos"></span>
-          <button class="btn-s alt" id="syncNext" aria-label="QR suivant">›</button>
-        </div>
-        <button class="btn-s alt" id="syncCopy" style="margin-top:12px">🔗 Copier un lien à envoyer</button>
-      </div>
+      <button class="btn bk-btn" id="syncGen">🔗 Copier un lien de transfert</button>
       <p class="expl warn" style="margin:12px 0 0">⚠️ Les données de l'appareil qui reçoit sont remplacées.</p>
       <div class="msg" id="syncMsg" style="margin:8px 0 0"></div>
     </div>
@@ -570,6 +561,21 @@
       </div>
       <p class="expl warn" style="margin:10px 0 0">⚠️ Une restauration remplace les données de cet appareil.</p>
       <div class="msg" id="bkMsg" style="margin:8px 0 0"></div>
+    </div>
+  </section>
+
+  <section id="feedback">
+    <h2>Feedback 💬</h2>
+    <div class="iv-sec">
+      <p class="expl">KamasUltra est gratuit et évolue grâce à vos retours. Un bug, une idée, un calcul qui te paraît faux, une page peu pratique : dis-le-moi, ça prend une minute.</p>
+      <ul class="expl" style="margin:0 0 14px 18px;padding:0">
+        <li>🐞 Un bug ou une erreur de calcul</li>
+        <li>💡 Une idée de fonctionnalité</li>
+        <li>🎨 Une page ou un bouton peu pratique</li>
+        <li>👍 Ce que tu aimes (ça aide aussi !)</li>
+      </ul>
+      <a class="btn bk-btn" id="fbLink" href="#" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none">✍️ Donner mon avis</a>
+      <p class="expl" id="fbNote" style="margin:10px 0 0"></p>
     </div>
   </section>
 
